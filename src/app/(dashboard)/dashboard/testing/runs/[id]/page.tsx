@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import { TestRun, TestResult, LLM_MODELS, LLM_LABELS, LlmModel } from '@/types'
+import { TestRun, TestResult, LLM_MODELS, LLM_LABELS, LLM_COSTS, LlmModel } from '@/types'
 import { CheckCircle2, XCircle, ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
@@ -118,7 +118,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                         {/* Card header */}
                         <div className={`px-4 pt-5 pb-3 border-b ${isCurrent ? 'border-orange-100' : 'border-gray-100'}`}>
                           <div className="flex items-center gap-1.5 mb-0.5">
-                            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                            <p className="text-xs font-semibold text-gray-700">
                               {LLM_LABELS[m]}
                             </p>
                             {isCurrent && (
@@ -126,6 +126,16 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                                 Current
                               </span>
                             )}
+                          </div>
+                          <div className="flex gap-2 mt-1 mb-2">
+                            <span className="text-[10px] text-gray-400">
+                              In: <span className="font-medium text-gray-600">{LLM_COSTS[m].input}</span>
+                            </span>
+                            <span className="text-[10px] text-gray-300">·</span>
+                            <span className="text-[10px] text-gray-400">
+                              Out: <span className="font-medium text-gray-600">{LLM_COSTS[m].output}</span>
+                            </span>
+                            <span className="text-[10px] text-gray-300">/1M</span>
                           </div>
                           {!r ? (
                             <p className="text-sm text-gray-300 italic">Pending...</p>

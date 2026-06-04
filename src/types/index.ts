@@ -78,3 +78,10 @@ export const LLM_LABELS: Record<LlmModel, string> = {
   'deepseek/deepseek-v4-flash':      'DeepSeek V4 Flash',
   'google/gemini-3-flash-preview':   'Gemini 3 Flash',
 }
+
+export const LLM_COSTS: Record<LlmModel, { input: string; output: string }> = {
+  'anthropic/claude-opus-4.8':     { input: '$5.00',  output: '$25.00' },
+  'openai/gpt-5.5':                { input: '$10.00', output: '$40.00' },
+  'deepseek/deepseek-v4-flash':    { input: '$0.44',  output: '$0.87'  },
+  'google/gemini-3-flash-preview': { input: '$0.50',  output: '$3.00'  },
+}
