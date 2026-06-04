@@ -23,8 +23,8 @@ export default async function TestRunsPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <BarChart3 className="w-6 h-6 text-[#E8431A]" /> Test Runs
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-[#E8431A]" /> Test Runs
         </h1>
         <p className="text-gray-500 mt-1 text-sm">
           Run all test calls through all 4 LLMs and compare results side-by-side.

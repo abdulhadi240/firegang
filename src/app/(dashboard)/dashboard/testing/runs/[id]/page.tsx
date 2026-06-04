@@ -49,14 +49,14 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
       </Link>
 
       {(run as TestRun).status === 'running' && (
-        <div className="mb-5 flex items-center gap-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
-          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-          n8n is processing — results will appear automatically as they come in.
+        <div className="mb-5 flex items-start sm:items-center gap-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0 mt-0.5 sm:mt-0" />
+          <span>n8n is processing — results will appear automatically as they come in.</span>
         </div>
       )}
 
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">{(run as TestRun).name}</h1>
+      <div className="mb-5 sm:mb-6">
+        <h1 className="text-lg sm:text-xl font-bold text-gray-900">{(run as TestRun).name}</h1>
         <p className="text-gray-400 text-xs mt-1">
           {(run as TestRun).total_calls} calls · {formatDate((run as TestRun).created_at)}
         </p>
@@ -76,10 +76,10 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                 </p>
 
                 {/* Pricing-style cards — horizontal scroll on small screens */}
-                <div className="flex gap-4 overflow-x-auto pb-2">
+                <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 -mx-1 px-1">
 
                   {/* Human / Approved card */}
-                  <div className="flex-shrink-0 w-52 rounded-2xl border-2 border-gray-200 bg-white flex flex-col">
+                  <div className="flex-shrink-0 w-44 sm:w-52 rounded-2xl border-2 border-gray-200 bg-white flex flex-col">
                     <div className="px-4 pt-5 pb-3 border-b border-gray-100">
                       <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Approved</p>
                       <p className="text-base font-bold text-gray-900 mt-0.5">Ground Truth</p>
@@ -109,7 +109,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
                     return (
                       <div
                         key={m}
-                        className={`flex-shrink-0 w-52 rounded-2xl border-2 flex flex-col ${
+                        className={`flex-shrink-0 w-44 sm:w-52 rounded-2xl border-2 flex flex-col ${
                           isCurrent
                             ? 'border-[#E8431A] bg-white shadow-md shadow-orange-100'
                             : 'border-gray-200 bg-white'

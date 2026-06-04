@@ -41,13 +41,13 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
         Back to Companies
       </Link>
 
-      <div className="flex items-center gap-4 mb-8">
-        <div className="w-14 h-14 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0">
-          <Building2 className="w-7 h-7 text-[#E8431A]" />
+      <div className="flex items-start sm:items-center gap-3 sm:gap-4 mb-8">
+        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0">
+          <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-[#E8431A]" />
         </div>
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-gray-900">{company.name}</h1>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">{company.name}</h1>
             <Badge variant={statusVariant[company.status] ?? 'secondary'}>{company.status}</Badge>
           </div>
           <p className="text-gray-500 text-sm mt-0.5">{auditResults?.length ?? 0} calls audited</p>

@@ -46,9 +46,9 @@ export function TestRunsClient({ initialRuns, completedModels }: Props) {
     <>
       {/* Compare dialog */}
       {compareRun && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => setCompareRun(null)} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setCompareRun(null)}
               className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"
@@ -101,15 +101,15 @@ export function TestRunsClient({ initialRuns, completedModels }: Props) {
       {/* Start new run */}
       <Card className="mb-6">
         <CardContent className="pt-5 space-y-3">
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <Input
               placeholder="Run name (optional)"
               value={runName}
               onChange={e => setRunName(e.target.value)}
-              className="max-w-xs"
+              className="w-full sm:max-w-xs"
               disabled={running}
             />
-            <Button onClick={handleStartRun} disabled={running}>
+            <Button onClick={handleStartRun} disabled={running} className="shrink-0">
               {running
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Starting...</>
                 : <><PlayCircle className="w-4 h-4" /> Start New Run</>
@@ -134,17 +134,17 @@ export function TestRunsClient({ initialRuns, completedModels }: Props) {
               {initialRuns.map(run => {
                 const models = completedModels[run.id] ?? []
                 return (
-                  <div key={run.id} className="px-5 py-4 flex items-center justify-between gap-4">
+                  <div key={run.id} className="px-4 sm:px-5 py-4 flex items-start sm:items-center justify-between gap-3 sm:gap-4">
                     {/* Left: status + name + date */}
-                    <div className="flex items-center gap-3 min-w-0">
-                      {STATUS_ICON[run.status]}
+                    <div className="flex items-start sm:items-center gap-3 min-w-0">
+                      <div className="mt-0.5 sm:mt-0 shrink-0">{STATUS_ICON[run.status]}</div>
                       <div className="min-w-0">
                         <p className="font-medium text-gray-900 text-sm truncate">{run.name}</p>
                         <p className="text-xs text-gray-400 mt-0.5">
                           {run.total_calls} calls · {formatDate(run.created_at)}
                         </p>
                         {/* LLM tick marks */}
-                        <div className="flex items-center gap-3 mt-2">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
                           {LLM_MODELS.map(m => (
                             <div key={m} className="flex items-center gap-1">
                               {models.includes(m)
@@ -159,7 +159,7 @@ export function TestRunsClient({ initialRuns, completedModels }: Props) {
                     </div>
 
                     {/* Right: actions */}
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
                       <Button
                         variant="secondary"
                         size="sm"

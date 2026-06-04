@@ -17,8 +17,8 @@ export default async function AuditLogsPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">My Audit Logs</h1>
-        <p className="text-gray-500 mt-1">All call audit records submitted by you. Click a row to see full details.</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">My Audit Logs</h1>
+        <p className="text-gray-500 mt-1 text-sm">All call audit records submitted by you. Click a row to see full details.</p>
       </div>
 
       <Card>

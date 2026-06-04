@@ -12,8 +12,8 @@ export default async function CompaniesPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-[#F1F5F9]">Companies</h1>
-        <p className="text-[#6B7280] mt-1">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Companies</h1>
+        <p className="text-gray-500 mt-1 text-sm">
           Select a company to check and audit their pending calls.
         </p>
       </div>

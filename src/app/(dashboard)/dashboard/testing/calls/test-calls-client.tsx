@@ -93,7 +93,7 @@ export function TestCallsClient({ initialCalls }: { initialCalls: TestCall[] }) 
                   {formError}
                 </div>
               )}
-              <div className="flex gap-2 justify-end">
+              <div className="flex flex-wrap gap-2 justify-end">
                 <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>Cancel</Button>
                 <Button type="submit" disabled={saving}>
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save Call
@@ -112,44 +112,46 @@ export function TestCallsClient({ initialCalls }: { initialCalls: TestCall[] }) 
               <p className="text-sm">No test calls yet. Add your first failed call above.</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-5 py-2.5 font-medium">Call ID</th>
-                  <th className="text-left px-4 py-2.5 font-medium">Approved Tags</th>
-                  <th className="text-left px-4 py-2.5 font-medium">Company</th>
-                  <th className="w-10" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {initialCalls.map(call => (
-                  <tr key={call.id} className="hover:bg-gray-50/50">
-                    <td className="px-5 py-3 font-mono text-xs text-gray-700">{call.call_id}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {call.human_tags.length > 0
-                          ? call.human_tags.map(t => <Tag key={t} label={t} />)
-                          : <span className="text-xs text-red-400 italic">no tags</span>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500">
-                      {call.company_id ?? <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-3 py-3">
-                      <button
-                        onClick={() => handleDelete(call.id)}
-                        disabled={deleting === call.id}
-                        className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
-                      >
-                        {deleting === call.id
-                          ? <Loader2 className="w-4 h-4 animate-spin" />
-                          : <Trash2 className="w-4 h-4" />}
-                      </button>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[540px]">
+                <thead>
+                  <tr className="text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
+                    <th className="text-left px-5 py-2.5 font-medium">Call ID</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Approved Tags</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Company</th>
+                    <th className="w-10" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {initialCalls.map(call => (
+                    <tr key={call.id} className="hover:bg-gray-50/50">
+                      <td className="px-5 py-3 font-mono text-xs text-gray-700">{call.call_id}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {call.human_tags.length > 0
+                            ? call.human_tags.map(t => <Tag key={t} label={t} />)
+                            : <span className="text-xs text-red-400 italic">no tags</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                        {call.company_id ?? <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-3 py-3">
+                        <button
+                          onClick={() => handleDelete(call.id)}
+                          disabled={deleting === call.id}
+                          className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                        >
+                          {deleting === call.id
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : <Trash2 className="w-4 h-4" />}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

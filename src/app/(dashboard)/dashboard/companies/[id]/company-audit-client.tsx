@@ -39,9 +39,9 @@ export function CompanyAuditClient({ company, userId, auditResults }: CompanyAud
   return (
     <>
       {showDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowDialog(false)} />
-          <div className="relative bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-7 sm:p-8 w-full sm:max-w-sm text-center">
             <div className="relative w-16 h-16 mx-auto mb-5">
               <div className="absolute inset-0 rounded-full bg-orange-100 animate-ping opacity-75" />
               <div className="relative w-16 h-16 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center">
@@ -59,7 +59,7 @@ export function CompanyAuditClient({ company, userId, auditResults }: CompanyAud
         </div>
       )}
 
-      <Card className="max-w-md">
+      <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <PhoneCall className="w-5 h-5 text-[#E8431A]" />
