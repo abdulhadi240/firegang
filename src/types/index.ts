@@ -31,6 +31,39 @@ export interface AuditStartResponse {
   error?: string
 }
 
+// ── Summary Documents ─────────────────────────────────────────
+
+export interface SummaryDocument {
+  id: string
+  user_id: string
+  title: string
+  html_content: string
+  company_id: string    // single company per document
+  company_name: string  // denormalized for display
+  month: string         // month name, e.g. "June" (matches MONTH_NAMES)
+  year: number
+  status: 'draft' | 'saved'
+  approval_status: ApprovalStatus
+  approval_decided_at: string | null
+  teamwork_inserted_at: string | null
+  teamwork_ref: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ApprovalStatus = 'pending' | 'approved' | 'disapproved'
+
+export const APPROVAL_LABELS: Record<ApprovalStatus, string> = {
+  pending:      'Pending review',
+  approved:     'Approved',
+  disapproved:  'Disapproved',
+}
+
+export const MONTH_NAMES = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+]
+
 // ── LLM Testing ──────────────────────────────────────────────
 
 export interface TestCall {
