@@ -162,12 +162,42 @@ export async function POST(req: NextRequest) {
         const title = `${company.name} — ${monthName} ${year}`
 
         const htmlContent = await generateHtmlForCompany(company, results, monthName, year)
+        const now = new Date().toISOString()
 
-        // Upsert: if a summary already exists for this company+month+year, update it
-        const { data: doc, error } = await supabase
+        // If a summary already exists for this company + month + year, update it
+        // in place; otherwise insert a new one. (Explicit lookup so this works
+        // even without a DB unique constraint on those columns.)
+        // Tolerant of pre-existing duplicates: take the most recent match.
+        const { data: matches } = await supabase
           .from('summary_documents')
-          .upsert(
-            {
+          .select('id')
+          .eq('company_id', company.id)
+          .eq('month', monthName)
+          .eq('year', year)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+        const existing = matches?.[0]
+
+        let doc: { id: string; title: string }
+        if (existing) {
+          const { data, error } = await supabase
+            .from('summary_documents')
+            .update({
+              company_name: company.name,
+              title,
+              html_content: htmlContent,
+              status: 'draft',
+              updated_at: now,
+            })
+            .eq('id', existing.id)
+            .select('id, title')
+            .single()
+          if (error) throw error
+          doc = data
+        } else {
+          const { data, error } = await supabase
+            .from('summary_documents')
+            .insert({
               company_id:   company.id,
               company_name: company.name,
               title,
@@ -175,14 +205,14 @@ export async function POST(req: NextRequest) {
               month:        monthName,
               year,
               status: 'draft',
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'company_id,month,year' }
-          )
-          .select('id, title')
-          .single()
+              updated_at: now,
+            })
+            .select('id, title')
+            .single()
+          if (error) throw error
+          doc = data
+        }
 
-        if (error) throw error
         return { id: doc.id, title: doc.title, companyId: company.id, companyName: company.name }
       })
     )

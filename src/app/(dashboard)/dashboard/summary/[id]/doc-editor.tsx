@@ -41,6 +41,7 @@ export function DocEditor({ document: initialDoc }: Props) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [approval, setApproval] = useState<ApprovalStatus>(initialDoc.approval_status)
   const [approvalBusy, setApprovalBusy] = useState<ApprovalStatus | null>(null)
+  const [approvalError, setApprovalError] = useState('')
   const [teamworkDone, setTeamworkDone] = useState(!!initialDoc.teamwork_inserted_at)
 
   // Set initial HTML once on mount (unwrap any JSON envelope / plain text)
@@ -51,7 +52,7 @@ export function DocEditor({ document: initialDoc }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const saveDoc = useCallback(async (html: string, newTitle?: string) => {
+  const saveDoc = useCallback(async (html: string, newTitle?: string): Promise<boolean> => {
     setSaveStatus('saving')
     try {
       const res = await fetch(`/api/summary/documents/${initialDoc.id}`, {
@@ -65,8 +66,10 @@ export function DocEditor({ document: initialDoc }: Props) {
       })
       if (!res.ok) throw new Error()
       setSaveStatus('saved')
+      return true
     } catch {
       setSaveStatus('error')
+      return false
     }
   }, [initialDoc.id, title])
 
@@ -97,7 +100,15 @@ export function DocEditor({ document: initialDoc }: Props) {
 
   async function decide(decision: ApprovalStatus) {
     setApprovalBusy(decision)
+    setApprovalError('')
     try {
+      // Flush the latest editor content to the DB BEFORE approving, so the
+      // approval webhook (which reads html_content from the DB) sends the edits.
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      const html = editorRef.current?.innerHTML ?? ''
+      const saved = await saveDoc(html)
+      if (!saved) throw new Error('Could not save your edits — not sent')
+
       const res = await fetch(`/api/summary/documents/${initialDoc.id}/approval`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -107,8 +118,8 @@ export function DocEditor({ document: initialDoc }: Props) {
       if (!res.ok) throw new Error(data.error ?? 'Failed')
       setApproval(decision)
       if (data.teamwork_inserted_at) setTeamworkDone(true)
-    } catch {
-      // leave approval state unchanged on failure
+    } catch (err: unknown) {
+      setApprovalError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
       setApprovalBusy(null)
     }
@@ -246,6 +257,14 @@ export function DocEditor({ document: initialDoc }: Props) {
             <span className="text-xs text-gray-400">Tx</span>
           </ToolBtn>
         </div>
+
+        {/* Approval error */}
+        {approvalError && (
+          <div className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 border-t border-red-100 bg-red-50 text-xs text-red-600">
+            <AlertCircle className="w-3 h-3 shrink-0" />
+            {approvalError}
+          </div>
+        )}
       </div>
 
       {/* ── Paper ─────────────────────────────────────────────────────────── */}
