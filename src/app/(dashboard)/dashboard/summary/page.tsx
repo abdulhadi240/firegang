@@ -18,7 +18,7 @@ export default async function SummaryPage() {
       .order('name', { ascending: true }),
     supabase
       .from('summary_documents')
-      .select('id, title, company_id, company_name, month, year, status, approval_status, teamwork_inserted_at, created_at, updated_at')
+      .select('id, title, company_id, company_name, month, year, status, approval_status, teamwork_inserted_at, teamwork_ref, created_at, updated_at')
       .eq('month', monthName)
       .eq('year', year)
       .order('company_name', { ascending: true }),

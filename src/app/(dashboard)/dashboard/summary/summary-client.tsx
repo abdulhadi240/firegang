@@ -7,7 +7,14 @@ import { cn, formatDate } from '@/lib/utils'
 import {
   Building2, FileText, CheckCheck, CalendarDays, Sparkles, Loader2,
   ChevronRight, X, ChevronLeft, Check, Ban, Search, Trash2, AlertCircle, Clock,
+  ExternalLink,
 } from 'lucide-react'
+
+// Published summaries live in Teamwork Notebooks. `teamwork_ref` holds the notebook id.
+const TEAMWORK_NOTEBOOK_BASE = 'https://firegangdentalmarketing.teamwork.com/app/notebooks'
+function teamworkUrl(ref: string | null | undefined) {
+  return ref ? `${TEAMWORK_NOTEBOOK_BASE}/${ref}` : null
+}
 
 interface Props {
   companies: Company[]
@@ -163,11 +170,12 @@ function CompanyDialog({
           <div className="space-y-2.5">
             {pageDocs.map((doc) => {
               const published = !!doc.teamwork_inserted_at
+              const twUrl = teamworkUrl(doc.teamwork_ref)
               const busy = busyId === doc.id
               return (
                 <div
                   key={doc.id}
-                  className="border border-gray-200 rounded-xl overflow-hidden hover:border-orange-200 transition-colors"
+                  className="group border border-gray-200 rounded-xl overflow-hidden hover:border-orange-200 transition-colors"
                 >
                   {/* Preview row → editor, with delete control alongside */}
                   <div className="flex items-stretch">
@@ -192,6 +200,21 @@ function CompanyDialog({
                         Edit <ChevronRight className="w-3.5 h-3.5" />
                       </span>
                     </button>
+
+                    {/* Open the published summary directly in Teamwork */}
+                    {published && twUrl && (
+                      <a
+                        href={twUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open in Teamwork"
+                        onClick={(e) => e.stopPropagation()}
+                        className="px-3 shrink-0 flex items-center gap-1 text-[11px] font-medium text-gray-300 hover:text-blue-600 hover:bg-blue-50 transition-colors border-l border-gray-100 sm:opacity-0 sm:group-hover:opacity-100"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span className="hidden sm:inline">Teamwork</span>
+                      </a>
+                    )}
 
                     {/* Delete (two-step confirm) */}
                     {confirmDeleteId === doc.id ? (
@@ -677,29 +700,54 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
           {companiesWithSummary.map((company, idx) => {
             const doc = docByCompany.get(company.id)!
             const published = !!doc.teamwork_inserted_at
+            const twUrl = teamworkUrl(doc.teamwork_ref)
             return (
-              <button
+              <div
                 key={company.id}
-                onClick={() => setOpenCompany(company)}
-                className="text-left bg-white border border-gray-200 rounded-xl px-4 py-3.5 hover:border-orange-200 hover:shadow-sm transition-all duration-150 group animate-fade-in-up"
+                className="relative flex items-start justify-between gap-2 text-left bg-white border border-gray-200 rounded-xl px-4 py-3.5 hover:border-orange-200 hover:shadow-sm transition-all duration-150 group animate-fade-in-up"
                 style={{ animationDelay: `${idx * 40}ms` }}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-start gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 mt-0.5">
-                      <Building2 className="w-3.5 h-3.5 text-[#E8431A]" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{company.name}</p>
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        <ApprovalPill status={doc.approval_status} />
-                        <TeamworkPill published={published} />
-                      </div>
+                <button
+                  onClick={() => setOpenCompany(company)}
+                  className="flex items-start gap-2.5 min-w-0 flex-1 text-left"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <Building2 className="w-3.5 h-3.5 text-[#E8431A]" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{company.name}</p>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <ApprovalPill status={doc.approval_status} />
+                      <TeamworkPill published={published} />
                     </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-[#E8431A] transition-colors shrink-0 mt-1" />
+                </button>
+
+                {/* Resting: chevron. On hover: check-summary + open-in-Teamwork actions. */}
+                <div className="shrink-0 mt-0.5">
+                  <ChevronRight className="w-4 h-4 text-gray-300 group-hover:hidden mt-0.5" />
+                  <div className="hidden group-hover:flex items-center gap-1">
+                    <button
+                      onClick={() => setOpenCompany(company)}
+                      title="Check summary"
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#E8431A] hover:bg-orange-50 transition-colors"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                    </button>
+                    {published && twUrl && (
+                      <a
+                        href={twUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open in Teamwork"
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </button>
+              </div>
             )
           })}
         </div>

@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('summary_documents')
-    .select('id, title, company_id, company_name, month, year, status, approval_status, teamwork_inserted_at, created_at, updated_at')
+    .select('id, title, company_id, company_name, month, year, status, approval_status, teamwork_inserted_at, teamwork_ref, created_at, updated_at')
     .order('year',  { ascending: false })
     .order('month', { ascending: false })
     .order('company_name', { ascending: true })
