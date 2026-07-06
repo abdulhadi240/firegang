@@ -6,7 +6,7 @@ import { Company, SummaryDocument, ApprovalStatus } from '@/types'
 import { cn } from '@/lib/utils'
 import {
   Building2, FileText, CheckCheck, CalendarDays, Sparkles, Loader2,
-  ChevronRight, X, ChevronLeft, Check, Ban, Search, Clock,
+  ChevronRight, X, ChevronLeft, Check, Ban, Search, Trash2, AlertCircle,
 } from 'lucide-react'
 
 interface Props {
@@ -57,6 +57,8 @@ function CompanyDialog({
   const [error, setError] = useState('')
   const [page, setPage] = useState(0)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Load this company's summaries on mount
   useEffect(() => {
@@ -98,6 +100,22 @@ function CompanyDialog({
       // surface a subtle inline error by leaving state unchanged
     } finally {
       setBusyId(null)
+    }
+  }
+
+  async function deleteDoc(doc: SummaryDocument) {
+    setDeletingId(doc.id)
+    try {
+      const res = await fetch(`/api/summary/documents/${doc.id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Delete failed')
+      setDocs((prev) => prev?.filter((d) => d.id !== doc.id) ?? prev)
+      setConfirmDeleteId(null)
+      router.refresh() // update the company list / stats behind the dialog
+    } catch {
+      // leave the row in place on failure
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -151,24 +169,57 @@ function CompanyDialog({
                   key={doc.id}
                   className="border border-gray-200 rounded-xl overflow-hidden hover:border-orange-200 transition-colors"
                 >
-                  {/* Clickable preview row → editor */}
-                  <button
-                    onClick={() => router.push(`/dashboard/summary/${doc.id}`)}
-                    className="w-full text-left px-4 py-3 flex items-center justify-between gap-3 group"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900">
-                        {doc.month} {doc.year}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                        <ApprovalPill status={doc.approval_status} />
-                        <TeamworkPill published={published} />
+                  {/* Preview row → editor, with delete control alongside */}
+                  <div className="flex items-stretch">
+                    <button
+                      onClick={() => router.push(`/dashboard/summary/${doc.id}`)}
+                      className="flex-1 min-w-0 text-left px-4 py-3 flex items-center justify-between gap-3 group"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">
+                          {doc.month} {doc.year}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          <ApprovalPill status={doc.approval_status} />
+                          <TeamworkPill published={published} />
+                        </div>
                       </div>
-                    </div>
-                    <span className="text-[11px] text-gray-400 inline-flex items-center gap-1 shrink-0 group-hover:text-[#E8431A] transition-colors">
-                      Edit <ChevronRight className="w-3.5 h-3.5" />
-                    </span>
-                  </button>
+                      <span className="text-[11px] text-gray-400 inline-flex items-center gap-1 shrink-0 group-hover:text-[#E8431A] transition-colors">
+                        Edit <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                    </button>
+
+                    {/* Delete (two-step confirm) */}
+                    {confirmDeleteId === doc.id ? (
+                      <div className="flex items-center gap-1 pr-3 pl-2 shrink-0">
+                        <button
+                          disabled={deletingId === doc.id}
+                          onClick={() => deleteDoc(doc)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 transition-colors"
+                        >
+                          {deletingId === doc.id
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Trash2 className="w-3 h-3" />}
+                          Delete
+                        </button>
+                        <button
+                          disabled={deletingId === doc.id}
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="px-2 py-1 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteId(doc.id)}
+                        title="Delete summary"
+                        className="px-3 shrink-0 flex items-center text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors border-l border-gray-100"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
 
                   {/* Approve / disapprove — only while not published to Teamwork */}
                   {!published && (
@@ -234,38 +285,24 @@ function CompanyDialog({
   )
 }
 
-// ── Generate dialog: pick up to 5 companies, 1-minute cooldown per batch ──────
+// ── Generate dialog: pick up to 5 companies at a time ─────────────────────────
 const MAX_PER_BATCH = 5
-const COOLDOWN_SECONDS = 60
+const COUNTDOWN_SECONDS = 30
 
 function GenerateDialog({
   companies,
   monthLabel,
-  month,
-  year,
   onClose,
-  onGenerated,
+  onStart,
 }: {
   companies: Company[]
   monthLabel: string
-  month: string
-  year: number
   onClose: () => void
-  onGenerated: () => void
+  onStart: (companyIds: string[]) => void
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [listOpen, setListOpen] = useState(true)
-  const [generating, setGenerating] = useState(false)
-  const [error, setError] = useState('')
-  const [cooldown, setCooldown] = useState(0) // seconds remaining
-
-  // Cooldown ticker
-  useEffect(() => {
-    if (cooldown <= 0) return
-    const t = setTimeout(() => setCooldown((c) => c - 1), 1000)
-    return () => clearTimeout(t)
-  }, [cooldown])
 
   const filtered = useMemo(
     () => companies.filter((c) => c.name.toLowerCase().includes(search.toLowerCase())),
@@ -283,30 +320,10 @@ function GenerateDialog({
     })
   }
 
-  async function generate() {
-    if (selected.size === 0 || generating || cooldown > 0) return
-    setGenerating(true)
-    setError('')
-    try {
-      const res = await fetch('/api/summary/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyIds: Array.from(selected), month, year }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Generation failed')
-      onGenerated()                // refresh the list behind the dialog
-      setSelected(new Set())
-      setCooldown(COOLDOWN_SECONDS) // start 1-minute cooldown before next batch
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setGenerating(false)
-    }
+  function start() {
+    if (selected.size === 0) return
+    onStart(Array.from(selected))
   }
-
-  const busy = generating
-  const disabled = busy || cooldown > 0 || selected.size === 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
@@ -317,7 +334,7 @@ function GenerateDialog({
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div>
             <p className="font-semibold text-gray-900 text-sm">Generate {monthLabel} summaries</p>
-            <p className="text-xs text-gray-400 mt-0.5">Select up to {MAX_PER_BATCH} companies per batch</p>
+            <p className="text-xs text-gray-400 mt-0.5">Select up to {MAX_PER_BATCH} companies at a time</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">
             <X className="w-4 h-4" />
@@ -392,35 +409,150 @@ function GenerateDialog({
 
           {atLimit && (
             <p className="text-[11px] text-[#E8431A] mt-2">
-              Batch limit reached — generate these {MAX_PER_BATCH}, then pick more after the cooldown.
+              Batch limit reached — you can generate up to {MAX_PER_BATCH} at once.
             </p>
           )}
-          {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
         </div>
 
         {/* Footer */}
         <div className="px-5 py-4 border-t border-gray-100 shrink-0">
           <button
-            onClick={generate}
-            disabled={disabled}
+            onClick={start}
+            disabled={selected.size === 0}
             className={cn(
               'w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all',
-              disabled
+              selected.size === 0
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
                 : 'bg-[#E8431A] text-white hover:bg-[#D03A14]'
             )}
           >
-            {busy ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
-            ) : cooldown > 0 ? (
-              <><Clock className="w-4 h-4" /> Cooldown — {cooldown}s</>
-            ) : (
-              <><Sparkles className="w-4 h-4" /> Generate {selected.size > 0 ? `(${selected.size})` : ''}</>
-            )}
+            <Sparkles className="w-4 h-4" /> Generate {selected.size > 0 ? `(${selected.size})` : ''}
           </button>
           <p className="text-[11px] text-gray-400 mt-2 text-center">
-            Up to {MAX_PER_BATCH} at a time · {COOLDOWN_SECONDS}s cooldown between batches
+            Up to {MAX_PER_BATCH} at a time
           </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Floating progress widget: engaging 30s countdown while summaries generate ─
+const LOADING_MESSAGES = [
+  'Analyzing audited calls…',
+  'Counting issue tags…',
+  'Summarizing auditor notes…',
+  'Drafting the monthly report…',
+  'Formatting for Teamwork…',
+  'Polishing the final copy…',
+]
+
+function GeneratingWidget({
+  count,
+  status,
+  onDismiss,
+}: {
+  count: number
+  status: 'running' | 'done' | 'error'
+  onDismiss: () => void
+}) {
+  const [remaining, setRemaining] = useState(COUNTDOWN_SECONDS)
+  const [msgIdx, setMsgIdx] = useState(0)
+
+  // Countdown ticker (floors at 0, then shows "Finalizing…")
+  useEffect(() => {
+    if (status !== 'running') return
+    const t = setInterval(() => setRemaining((r) => (r > 0 ? r - 1 : 0)), 1000)
+    return () => clearInterval(t)
+  }, [status])
+
+  // Rotate loading messages
+  useEffect(() => {
+    if (status !== 'running') return
+    const t = setInterval(() => setMsgIdx((i) => (i + 1) % LOADING_MESSAGES.length), 2500)
+    return () => clearInterval(t)
+  }, [status])
+
+  // Auto-dismiss shortly after completion
+  useEffect(() => {
+    if (status === 'done') {
+      const t = setTimeout(onDismiss, 2200)
+      return () => clearTimeout(t)
+    }
+  }, [status, onDismiss])
+
+  const pct = status === 'done'
+    ? 100
+    : Math.min(95, Math.round(((COUNTDOWN_SECONDS - remaining) / COUNTDOWN_SECONDS) * 100))
+
+  return (
+    <div className="fixed bottom-4 right-4 left-4 sm:left-auto z-50 sm:w-80 animate-fade-in-up">
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+        <div className="p-4">
+          <div className="flex items-center gap-3">
+            {/* Countdown ring */}
+            <div className="relative w-11 h-11 shrink-0">
+              {status === 'running' && (
+                <svg className="w-11 h-11 -rotate-90" viewBox="0 0 44 44">
+                  <circle cx="22" cy="22" r="19" fill="none" stroke="#f3f4f6" strokeWidth="4" />
+                  <circle
+                    cx="22" cy="22" r="19" fill="none" stroke="#E8431A" strokeWidth="4"
+                    strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 19}
+                    strokeDashoffset={(1 - pct / 100) * 2 * Math.PI * 19}
+                    style={{ transition: 'stroke-dashoffset 1s linear' }}
+                  />
+                </svg>
+              )}
+              <div className="absolute inset-0 flex items-center justify-center">
+                {status === 'running' ? (
+                  <span className="text-xs font-bold text-gray-900 tabular-nums">
+                    {remaining > 0 ? remaining : <Loader2 className="w-4 h-4 animate-spin text-[#E8431A]" />}
+                  </span>
+                ) : status === 'done' ? (
+                  <div className="w-11 h-11 rounded-full bg-green-50 border border-green-200 flex items-center justify-center">
+                    <CheckCheck className="w-5 h-5 text-green-600" />
+                  </div>
+                ) : (
+                  <div className="w-11 h-11 rounded-full bg-red-50 border border-red-100 flex items-center justify-center">
+                    <AlertCircle className="w-5 h-5 text-red-500" />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-gray-900">
+                {status === 'running'
+                  ? `Generating ${count} ${count === 1 ? 'summary' : 'summaries'}…`
+                  : status === 'done'
+                    ? 'Summaries ready!'
+                    : 'Generation failed'}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5 truncate">
+                {status === 'running'
+                  ? (remaining > 0 ? LOADING_MESSAGES[msgIdx] : 'Finalizing…')
+                  : status === 'done'
+                    ? 'Showing your accounts now'
+                    : 'Please try again'}
+              </p>
+            </div>
+
+            {status !== 'running' && (
+              <button onClick={onDismiss} className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Progress bar */}
+          <div className="mt-3 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all duration-1000 ease-out',
+                status === 'error' ? 'bg-red-400' : 'bg-gradient-to-r from-[#E8431A] to-[#F97316]')}
+              style={{ width: `${status === 'error' ? 100 : pct}%` }}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -432,8 +564,34 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
   const router = useRouter()
   const [showGenerate, setShowGenerate] = useState(false)
   const [openCompany, setOpenCompany] = useState<Company | null>(null)
+  const [genJob, setGenJob] = useState<
+    { count: number; status: 'running' | 'done' | 'error' } | null
+  >(null)
 
   const monthLabel = `${month} ${year}`
+
+  // Kick off generation: minimize the dialog, show the progress widget, and
+  // reveal the accounts as soon as the summaries are available.
+  function startGeneration(companyIds: string[]) {
+    setShowGenerate(false)
+    setGenJob({ count: companyIds.length, status: 'running' })
+
+    fetch('/api/summary/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyIds, month, year }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error ?? 'Generation failed')
+        // Summaries are available → reveal the accounts and finish the timer.
+        router.refresh()
+        setGenJob((j) => (j ? { ...j, status: 'done' } : j))
+      })
+      .catch(() => {
+        setGenJob((j) => (j ? { ...j, status: 'error' } : j))
+      })
+  }
 
   // Companies that have a summary for the target month
   const docByCompany = useMemo(() => {
@@ -493,7 +651,7 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
           <Sparkles className="w-4 h-4" /> Generate {monthLabel} summaries
         </button>
         <p className="text-xs text-gray-400 mt-2 ml-1">
-          Select up to {MAX_PER_BATCH} companies per batch · {COOLDOWN_SECONDS}s cooldown between batches
+          Select up to {MAX_PER_BATCH} companies at a time
         </p>
       </div>
 
@@ -551,10 +709,16 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
         <GenerateDialog
           companies={companies}
           monthLabel={monthLabel}
-          month={month}
-          year={year}
           onClose={() => setShowGenerate(false)}
-          onGenerated={() => router.refresh()}
+          onStart={startGeneration}
+        />
+      )}
+
+      {genJob && (
+        <GeneratingWidget
+          count={genJob.count}
+          status={genJob.status}
+          onDismiss={() => setGenJob(null)}
         />
       )}
     </div>

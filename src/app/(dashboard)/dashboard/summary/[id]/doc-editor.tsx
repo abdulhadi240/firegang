@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { SummaryDocument, ApprovalStatus } from '@/types'
 import { extractSummaryHtml } from '@/lib/summary-content'
 import {
-  ArrowLeft, Save, CheckCircle2, Loader2, AlertCircle,
+  ArrowLeft, CheckCircle2, Loader2, AlertCircle,
   Bold, Italic, Underline, List, ListOrdered,
-  Check, Ban, CheckCheck,
+  Check, Ban, CheckCheck, Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
@@ -34,6 +35,7 @@ function ToolBtn({
 
 // ── Main editor ───────────────────────────────────────────────────────────────
 export function DocEditor({ document: initialDoc }: Props) {
+  const router = useRouter()
   const editorRef = useRef<HTMLDivElement>(null)
   const saveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -43,6 +45,8 @@ export function DocEditor({ document: initialDoc }: Props) {
   const [approvalBusy, setApprovalBusy] = useState<ApprovalStatus | null>(null)
   const [approvalError, setApprovalError] = useState('')
   const [teamworkDone, setTeamworkDone] = useState(!!initialDoc.teamwork_inserted_at)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // Set initial HTML once on mount (unwrap any JSON envelope / plain text)
   useEffect(() => {
@@ -82,12 +86,6 @@ export function DocEditor({ document: initialDoc }: Props) {
     }, 1800)
   }
 
-  function handleSaveNow() {
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    const html = editorRef.current?.innerHTML ?? ''
-    saveDoc(html)
-  }
-
   function execCmd(cmd: string, value?: string) {
     document.execCommand(cmd, false, value)
     editorRef.current?.focus()
@@ -122,6 +120,22 @@ export function DocEditor({ document: initialDoc }: Props) {
       setApprovalError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
       setApprovalBusy(null)
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true)
+    setApprovalError('')
+    try {
+      const res = await fetch(`/api/summary/documents/${initialDoc.id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Delete failed')
+      router.push('/dashboard/summary')
+      router.refresh()
+    } catch (err: unknown) {
+      setApprovalError(err instanceof Error ? err.message : 'Could not delete')
+      setDeleting(false)
+      setConfirmDelete(false)
     }
   }
 
@@ -172,18 +186,6 @@ export function DocEditor({ document: initialDoc }: Props) {
             {monthName} {initialDoc.year}
           </span>
 
-          {/* Save button */}
-          <button
-            onClick={handleSaveNow}
-            disabled={saveStatus === 'saving'}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-medium hover:bg-gray-700 disabled:opacity-50 transition-colors shrink-0"
-          >
-            {saveStatus === 'saving'
-              ? <Loader2 className="w-3 h-3 animate-spin" />
-              : <Save className="w-3 h-3" />}
-            Save
-          </button>
-
           {/* Approve / disapprove — hidden once published to Teamwork */}
           {!teamworkDone && (
             <div className="flex items-center gap-1 shrink-0">
@@ -228,6 +230,35 @@ export function DocEditor({ document: initialDoc }: Props) {
               <CheckCheck className="w-3 h-3" />
               <span className="hidden sm:inline">Published to Teamwork</span>
             </span>
+          )}
+
+          {/* Delete (two-step confirm) */}
+          {confirmDelete ? (
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 transition-colors"
+              >
+                {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                <span className="hidden sm:inline">Confirm</span>
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              title="Delete summary"
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           )}
         </div>
 
