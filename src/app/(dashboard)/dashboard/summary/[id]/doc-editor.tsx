@@ -9,7 +9,7 @@ import {
   Bold, Italic, Underline, List, ListOrdered,
   Check, Ban, CheckCheck, Trash2,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import Link from 'next/link'
 
 interface Props {
@@ -184,6 +184,11 @@ export function DocEditor({ document: initialDoc }: Props) {
           {/* Month badge */}
           <span className="hidden sm:inline text-[10px] px-2 py-0.5 rounded-full bg-orange-50 border border-orange-100 text-[#E8431A] font-medium shrink-0">
             {monthName} {initialDoc.year}
+          </span>
+
+          {/* Created date + time */}
+          <span className="hidden lg:inline text-[10px] text-gray-400 shrink-0">
+            Created {formatDate(initialDoc.created_at)}
           </span>
 
           {/* Approve / disapprove — hidden once published to Teamwork */}

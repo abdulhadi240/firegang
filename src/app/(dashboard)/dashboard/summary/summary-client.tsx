@@ -3,10 +3,10 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Company, SummaryDocument, ApprovalStatus } from '@/types'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import {
   Building2, FileText, CheckCheck, CalendarDays, Sparkles, Loader2,
-  ChevronRight, X, ChevronLeft, Check, Ban, Search, Trash2, AlertCircle,
+  ChevronRight, X, ChevronLeft, Check, Ban, Search, Trash2, AlertCircle, Clock,
 } from 'lucide-react'
 
 interface Props {
@@ -178,6 +178,10 @@ function CompanyDialog({
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-gray-900">
                           {doc.month} {doc.year}
+                        </p>
+                        <p className="flex items-center gap-1 text-[11px] text-gray-400 mt-0.5">
+                          <Clock className="w-3 h-3 shrink-0" />
+                          Created {formatDate(doc.created_at)}
                         </p>
                         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                           <ApprovalPill status={doc.approval_status} />
