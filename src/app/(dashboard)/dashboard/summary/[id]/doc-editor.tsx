@@ -7,7 +7,7 @@ import { extractSummaryHtml } from '@/lib/summary-content'
 import {
   ArrowLeft, CheckCircle2, Loader2, AlertCircle,
   Bold, Italic, Underline, List, ListOrdered,
-  Check, Ban, CheckCheck, Trash2,
+  Check, Ban, CheckCheck, Trash2, RefreshCw,
 } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import Link from 'next/link'
@@ -45,6 +45,7 @@ export function DocEditor({ document: initialDoc }: Props) {
   const [approvalBusy, setApprovalBusy] = useState<ApprovalStatus | null>(null)
   const [approvalError, setApprovalError] = useState('')
   const [teamworkDone, setTeamworkDone] = useState(!!initialDoc.teamwork_inserted_at)
+  const [resubmitting, setResubmitting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -115,11 +116,34 @@ export function DocEditor({ document: initialDoc }: Props) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed')
       setApproval(decision)
-      if (data.teamwork_inserted_at) setTeamworkDone(true)
+      if (data.teamwork_inserted_at) {
+        setTeamworkDone(true)
+      } else if (data.teamwork_failed) {
+        // Approved, but the Teamwork push failed — user can resubmit.
+        setApprovalError('Approved, but sending to Teamwork failed. You can resubmit it.')
+      }
     } catch (err: unknown) {
       setApprovalError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
       setApprovalBusy(null)
+    }
+  }
+
+  // Retry the Teamwork push for an approved-but-unpublished summary.
+  async function resubmit() {
+    setResubmitting(true)
+    setApprovalError('')
+    try {
+      const res = await fetch(`/api/summary/documents/${initialDoc.id}/resubmit`, {
+        method: 'POST',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Resubmit failed')
+      if (data.teamwork_inserted_at) setTeamworkDone(true)
+    } catch (err: unknown) {
+      setApprovalError(err instanceof Error ? err.message : 'Resubmit failed')
+    } finally {
+      setResubmitting(false)
     }
   }
 
@@ -227,6 +251,21 @@ export function DocEditor({ document: initialDoc }: Props) {
                 <span className="hidden sm:inline">Disapprove</span>
               </button>
             </div>
+          )}
+
+          {/* Resubmit — approved, but not yet published to Teamwork */}
+          {!teamworkDone && approval === 'approved' && (
+            <button
+              onClick={resubmit}
+              disabled={resubmitting || approvalBusy !== null}
+              title="Resubmit to Teamwork"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors shrink-0"
+            >
+              {resubmitting
+                ? <Loader2 className="w-3 h-3 animate-spin" />
+                : <RefreshCw className="w-3 h-3" />}
+              <span className="hidden sm:inline">Resubmit</span>
+            </button>
           )}
 
           {/* Published-to-Teamwork indicator (after approval) */}

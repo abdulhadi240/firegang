@@ -7,7 +7,7 @@ import { cn, formatDate } from '@/lib/utils'
 import {
   Building2, FileText, CheckCheck, CalendarDays, Sparkles, Loader2,
   ChevronRight, X, ChevronLeft, Check, Ban, Search, Trash2, AlertCircle, Clock,
-  ExternalLink,
+  ExternalLink, RefreshCw,
 } from 'lucide-react'
 
 // Published summaries live in Teamwork Notebooks. `teamwork_ref` holds the notebook id.
@@ -64,6 +64,7 @@ function CompanyDialog({
   const [error, setError] = useState('')
   const [page, setPage] = useState(0)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [resubmitId, setResubmitId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -107,6 +108,31 @@ function CompanyDialog({
       // surface a subtle inline error by leaving state unchanged
     } finally {
       setBusyId(null)
+    }
+  }
+
+  // Retry the Teamwork push for an approved-but-unpublished summary.
+  async function resubmit(doc: SummaryDocument) {
+    setResubmitId(doc.id)
+    try {
+      const res = await fetch(`/api/summary/documents/${doc.id}/resubmit`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Resubmit failed')
+      setDocs((prev) =>
+        prev?.map((d) =>
+          d.id === doc.id
+            ? {
+                ...d,
+                teamwork_inserted_at: data.teamwork_inserted_at ?? d.teamwork_inserted_at,
+                teamwork_ref: data.teamwork_ref ?? d.teamwork_ref,
+              }
+            : d
+        ) ?? prev
+      )
+    } catch {
+      // leave the row unchanged on failure so the user can retry
+    } finally {
+      setResubmitId(null)
     }
   }
 
@@ -277,6 +303,20 @@ function CompanyDialog({
                         <Ban className="w-3 h-3" />
                         Disapprove
                       </button>
+                      {/* Approved but not yet published → allow resubmitting to Teamwork */}
+                      {doc.approval_status === 'approved' && (
+                        <button
+                          disabled={busy || resubmitId === doc.id}
+                          onClick={() => resubmit(doc)}
+                          title="Resubmit to Teamwork"
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                        >
+                          {resubmitId === doc.id
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <RefreshCw className="w-3 h-3" />}
+                          Resubmit
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { ApprovalStatus } from '@/types'
-import { extractSummaryHtml } from '@/lib/summary-content'
+import { pushSummaryToTeamwork } from '@/lib/teamwork'
 
 // Approve / disapprove a summary document.
-// On "approved" we push the summary to the Teamwork webhook and mark it
-// published; on "disapproved" we simply record the status.
+// On "approved" we record the decision AND attempt to push the summary to the
+// Teamwork webhook. If that push fails the document stays "approved" but
+// unpublished (teamwork_inserted_at null) so it can be resubmitted later.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -27,7 +28,6 @@ export async function POST(
 
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const cleanHtml = extractSummaryHtml(doc.html_content)
   const now = new Date().toISOString()
   const update: Record<string, unknown> = {
     approval_status:     decision,
@@ -35,41 +35,18 @@ export async function POST(
     updated_at:          now,
   }
 
-  // On approval, push the full summary to the Teamwork webhook.
+  // On approval, attempt to push the summary to Teamwork. A failure here does
+  // NOT roll back the approval — the doc remains approved-but-unpublished and
+  // can be resubmitted from the UI.
+  let teamworkFailed = false
   if (decision === 'approved') {
-    const webhookUrl = process.env.APPROVE_WEBHOOK_URL
-    if (webhookUrl) {
-      try {
-        const res = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id:           doc.id,
-            title:        doc.title,
-            summary:      cleanHtml,   // the full summary content (unwrapped)
-            html_content: cleanHtml,
-            company_id:   doc.company_id,
-            company_name: doc.company_name,
-            month:        doc.month,
-            year:         doc.year,
-          }),
-        })
-        if (!res.ok) throw new Error(`Teamwork webhook returned ${res.status}`)
-
-        // Capture a reference id from the webhook response if it returns one.
-        try {
-          const result = await res.json()
-          update.teamwork_ref = result?.id ?? result?.ref ?? null
-        } catch {
-          update.teamwork_ref = null
-        }
-      } catch (err) {
-        console.error('[summary approval webhook]', err)
-        return NextResponse.json({ error: 'Teamwork webhook failed' }, { status: 502 })
-      }
+    const result = await pushSummaryToTeamwork(doc)
+    if (result.ok) {
+      update.teamwork_inserted_at = now
+      update.teamwork_ref         = result.ref
+    } else {
+      teamworkFailed = true
     }
-    // Approval publishes the summary to Teamwork.
-    update.teamwork_inserted_at = now
   }
 
   const { data: updated, error } = await supabase
@@ -80,5 +57,5 @@ export async function POST(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ success: true, ...updated })
+  return NextResponse.json({ success: true, teamwork_failed: teamworkFailed, ...updated })
 }
