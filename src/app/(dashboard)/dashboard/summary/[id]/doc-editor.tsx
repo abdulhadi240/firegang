@@ -116,12 +116,8 @@ export function DocEditor({ document: initialDoc }: Props) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed')
       setApproval(decision)
-      if (data.teamwork_inserted_at) {
-        setTeamworkDone(true)
-      } else if (data.teamwork_failed) {
-        // Approved, but the Teamwork push failed — user can resubmit.
-        setApprovalError('Approved, but sending to Teamwork failed. You can resubmit it.')
-      }
+      // Approval no longer publishes to Teamwork — that's a separate step
+      // (the Resubmit button, shown while approved & unpublished).
     } catch (err: unknown) {
       setApprovalError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {

@@ -667,8 +667,18 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
     return m
   }, [monthDocuments])
 
+  // Latest summarized account first: sort by the summary's created date (desc).
   const companiesWithSummary = useMemo(
-    () => companies.filter((c) => docByCompany.has(c.id)),
+    () =>
+      companies
+        .filter((c) => docByCompany.has(c.id))
+        .sort((a, b) => {
+          const da = docByCompany.get(a.id)!
+          const db = docByCompany.get(b.id)!
+          return (
+            new Date(db.created_at).getTime() - new Date(da.created_at).getTime()
+          )
+        }),
     [companies, docByCompany]
   )
 
