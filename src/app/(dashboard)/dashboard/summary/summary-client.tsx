@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Company, SummaryDocument, ApprovalStatus } from '@/types'
+import { Company, SummaryDocument, ApprovalStatus, MONTH_NAMES, monthDateRange } from '@/types'
 import { cn, formatDate } from '@/lib/utils'
 import {
   Building2, FileText, CheckCheck, CalendarDays, Sparkles, Loader2,
@@ -637,16 +637,34 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
 
   const monthLabel = `${month} ${year}`
 
+  // ── Month navigation ────────────────────────────────────────────────────────
+  const monthIndex = MONTH_NAMES.indexOf(month)
+  // Don't allow navigating past the current calendar month (no future audits).
+  const now = new Date()
+  const isCurrentOrFuture = year > now.getFullYear() || (year === now.getFullYear() && monthIndex >= now.getMonth())
+
+  function goToMonth(delta: number) {
+    let m = monthIndex + delta
+    let y = year
+    if (m < 0)  { m = 11; y -= 1 }
+    if (m > 11) { m = 0;  y += 1 }
+    router.push(`/dashboard/summary?month=${MONTH_NAMES[m]}&year=${y}`)
+  }
+
   // Kick off generation: minimize the dialog, show the progress widget, and
   // reveal the accounts as soon as the summaries are available.
   function startGeneration(companyIds: string[]) {
     setShowGenerate(false)
     setGenJob({ count: companyIds.length, status: 'running' })
 
+    // Send an inclusive ISO-8601 date range for the selected month so the
+    // downstream call-audit API can pull the right calls.
+    const { start_date, end_date } = monthDateRange(month, year)
+
     fetch('/api/summary/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ companyIds, month, year }),
+      body: JSON.stringify({ companyIds, month, year, start_date, end_date }),
     })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}))
@@ -696,6 +714,31 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
 
   return (
     <div>
+      {/* ── Month switcher ────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-5">
+        <div className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-xl p-1 shadow-sm">
+          <button
+            onClick={() => goToMonth(-1)}
+            title="Previous month"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <div className="flex items-center gap-2 px-3 min-w-[8.5rem] justify-center">
+            <CalendarDays className="w-4 h-4 text-[#E8431A] shrink-0" />
+            <span className="text-sm font-semibold text-gray-900 tabular-nums">{monthLabel}</span>
+          </div>
+          <button
+            onClick={() => goToMonth(1)}
+            disabled={isCurrentOrFuture}
+            title={isCurrentOrFuture ? "Can't audit a future month" : 'Next month'}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
       {/* ── Stat cards ────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {stats.map((stat, i) => {

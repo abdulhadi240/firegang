@@ -64,6 +64,111 @@ export const MONTH_NAMES = [
   'July','August','September','October','November','December',
 ]
 
+// Inclusive ISO-8601 (YYYY-MM-DD) date range covering a whole month.
+// e.g. monthDateRange('July', 2026) → { start_date: '2026-07-01', end_date: '2026-07-31' }
+// Matches the call-audit API convention where start/end dates are inclusive.
+export function monthDateRange(
+  monthName: string,
+  year: number
+): { start_date: string; end_date: string } {
+  const monthIndex = MONTH_NAMES.indexOf(monthName)
+  if (monthIndex === -1) throw new Error(`Unknown month: ${monthName}`)
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
+  return {
+    start_date: iso(new Date(Date.UTC(year, monthIndex, 1))),
+    end_date:   iso(new Date(Date.UTC(year, monthIndex + 1, 0))), // day 0 of next month = last day
+  }
+}
+
+// ── GHL Call Reconciliation (Gillespie Dentistry) ─────────────
+
+// Both exports share this schema. Our own sheet carries one extra column
+// (`Recording`); the GHL export is otherwise identical, which is what makes the
+// month-end merge a straight column-for-column join.
+export const GHL_COLUMNS = [
+  'Date & time',
+  'Contact name',
+  'Contact phone',
+  'Marketing campaign',
+  'Number name',
+  'Number phone',
+  'Source type',
+  'Direction',
+  'Call status',
+  'Disposition',
+  'First time',
+  'Keyword',
+  'Referrer',
+  'Campaign',
+  'Duration',
+  'Device type',
+  'Qualified lead',
+  'Landing page',
+  'From',
+  'To',
+] as const
+export type GhlColumn = typeof GHL_COLUMNS[number]
+
+/** The recording URL lives only in our sheet, and is appended to the merged output. */
+export const OUR_RECORDING_COLUMN = 'Recording'
+
+/** Column order of the reconciled sheet the admin reviews and ships. */
+export const MERGED_COLUMNS = [...GHL_COLUMNS, OUR_RECORDING_COLUMN] as const
+
+/** The three fields the two systems are joined on. */
+export const MATCH_COLUMNS: readonly string[] = ['Date & time', 'Contact phone', 'Duration']
+
+export type RowSource = 'matched' | 'ghl_only' | 'sheet_only' | 'manual'
+
+export const ROW_SOURCE_LABELS: Record<RowSource, string> = {
+  matched:    'Matched',
+  ghl_only:   'GHL only',
+  sheet_only: 'Our sheet only',
+  manual:     'Added manually',
+}
+
+export interface MatchedRow {
+  source: RowSource
+  data: Record<string, string>
+}
+
+export interface ReconcileSummary {
+  ghl_total: number
+  sheet_total: number
+  matched: number
+  ghl_only: number
+  sheet_only: number
+  /** Rows that would ship without a recording URL — the audit can't run on these. */
+  missing_recording: number
+}
+
+export type ReconciliationStatus = 'draft' | 'verified' | 'submitted'
+
+// Standalone flow: the practice it runs for is not in the companies table, so a
+// reconciliation is keyed by month + year alone.
+export interface GhlReconciliation {
+  id: string
+  month: string   // month name, e.g. "June"
+  year: number
+  status: ReconciliationStatus
+  summary: ReconcileSummary
+  source_tab: string | null       // the tab of our sheet that was read
+  submitted_at: string | null
+  webhook_ref: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface GhlReconciliationRow {
+  id: string
+  reconciliation_id: string
+  source: RowSource
+  data: Record<string, string>
+  /** Excluded rows stay visible in the UI but are omitted from the webhook payload. */
+  excluded: boolean
+  position: number
+}
+
 // ── LLM Testing ──────────────────────────────────────────────
 
 export interface TestCall {

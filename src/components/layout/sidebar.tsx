@@ -5,13 +5,14 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Building2, ClipboardList, LogOut, Menu, X, FlaskConical, BarChart3, PieChart } from 'lucide-react'
+import { LayoutDashboard, Building2, ClipboardList, LogOut, Menu, X, FlaskConical, BarChart3, PieChart, PhoneCall } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard',             label: 'Dashboard',  icon: LayoutDashboard, exact: true },
   { href: '/dashboard/companies',   label: 'Companies',  icon: Building2 },
   { href: '/dashboard/audit-logs',  label: 'Audit Logs', icon: ClipboardList },
   { href: '/dashboard/summary',     label: 'Summary',    icon: PieChart },
+  { href: '/dashboard/ghl-calls',   label: 'GHL Calls',  icon: PhoneCall },
 ]
 
 const testingItems = [

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
-import { MONTH_NAMES } from '@/types'
+import { MONTH_NAMES, monthDateRange } from '@/types'
 import { extractSummaryHtml } from '@/lib/summary-content'
 
 const anthropic = new Anthropic()
@@ -16,7 +16,9 @@ async function generateHtmlForCompany(
   company: { id: string; name: string; status: string },
   results: AuditRow[],
   monthName: string,
-  year: number
+  year: number,
+  startDate: string,
+  endDate: string
 ): Promise<string> {
   const tagCount: Record<string, number> = {}
   const notes: string[] = []
@@ -50,6 +52,10 @@ async function generateHtmlForCompany(
         notes:        notes.slice(0, 5),
         month:        monthName,
         year,
+        // Inclusive ISO-8601 range covering the selected month, e.g.
+        // start_date "2026-07-01" / end_date "2026-07-31".
+        start_date:   startDate,
+        end_date:     endDate,
       }),
     })
     if (!res.ok) throw new Error(`External API returned ${res.status}`)
@@ -118,6 +124,8 @@ export async function POST(req: NextRequest) {
       companyIds: string[]
       month?: number | string   // month name ("June") or 1-12
       year?: number
+      start_date?: string        // ISO-8601 (YYYY-MM-DD), inclusive
+      end_date?: string          // ISO-8601 (YYYY-MM-DD), inclusive
     }
 
     const { companyIds } = body
@@ -136,6 +144,14 @@ export async function POST(req: NextRequest) {
 
     const year = body.year
       ?? (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear())
+
+    // Inclusive ISO-8601 date range for the selected month. Trust the client's
+    // values when provided, otherwise derive them from month/year so the
+    // downstream call-audit API always receives a range.
+    const { start_date, end_date } =
+      body.start_date && body.end_date
+        ? { start_date: body.start_date, end_date: body.end_date }
+        : monthDateRange(monthName, year)
 
     if (!companyIds || companyIds.length === 0) {
       return NextResponse.json({ error: 'No companies selected' }, { status: 400 })
@@ -161,7 +177,7 @@ export async function POST(req: NextRequest) {
         const results = (allResults ?? []).filter((r) => r.company_id === company.id)
         const title = `${company.name} — ${monthName} ${year}`
 
-        const htmlContent = await generateHtmlForCompany(company, results, monthName, year)
+        const htmlContent = await generateHtmlForCompany(company, results, monthName, year, start_date, end_date)
         const now = new Date().toISOString()
 
         // If a summary already exists for this company + month + year, update it

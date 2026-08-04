@@ -33,6 +33,11 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# google service account keys — never commit these
+firegang.json
+*-service-account*.json
+gcp-*.json
+
 # vercel
 .vercel
 

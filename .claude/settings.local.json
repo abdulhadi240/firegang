@@ -14,7 +14,28 @@
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in {**d.get\\('dependencies',{}\\), **d.get\\('devDependencies',{}\\)}.items\\(\\)}, indent=2\\)\\)\")",
       "Bash(node -e \"const d=require\\('./package.json'\\); const all={...d.dependencies,...\\(d.devDependencies||{}\\)}; Object.entries\\(all\\).forEach\\(\\([k,v]\\)=>console.log\\(k,v\\)\\)\")",
       "Bash(node -e \"console.log\\(require\\('next/package.json'\\).version\\)\")",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 40)",
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(npx eslint src/lib/csv.ts src/lib/google-sheets.ts src/lib/ghl-match.ts src/types/index.ts \"src/app/api/ghl\" \"src/app/\\(dashboard\\)/dashboard/ghl-calls\" src/components/layout/sidebar.tsx)",
+      "PowerShell(git stash *)",
+      "PowerShell(npx tsc --noEmit; if \\($?\\) { \"TYPECHECK OK\" }; npx eslint \"src/app/\\(dashboard\\)/dashboard/ghl-calls\"; if \\($?\\) { \"LINT OK\" })",
+      "Bash(python -c ' *)",
+      "PowerShell(Get-PSDrive C | Select-Object Used,Free,@{n='FreeGB';e={[math]::Round\\($_.Free/1GB,2\\)}})",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(npx tsc --noEmit; if \\($?\\) { \"TYPECHECK OK\" })",
+      "PowerShell(npx eslint \"src/app/\\(dashboard\\)/dashboard/ghl-calls\" \"src/app/api/ghl\" src/types/index.ts; if \\($?\\) { \"LINT OK\" })",
+      "PowerShell(npx tsc --noEmit; if \\($?\\) { \"TYPECHECK OK\" }; npx eslint \"src/app/\\(dashboard\\)/dashboard/ghl-calls\" \"src/app/api/ghl\" src/types/index.ts; if \\($?\\) { \"LINT CLEAN\" })",
+      "Bash(node -e ' *)",
+      "PowerShell(node \"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--developer-firegang-call-audit-manual\\\\1000dbde-dc5a-4012-847b-54cf15eca402\\\\scratchpad\\\\fix-env.js\")",
+      "PowerShell(node \"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--developer-firegang-call-audit-manual\\\\1000dbde-dc5a-4012-847b-54cf15eca402\\\\scratchpad\\\\test-sheets.js\")",
+      "PowerShell(node \"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--developer-firegang-call-audit-manual\\\\1000dbde-dc5a-4012-847b-54cf15eca402\\\\scratchpad\\\\inspect-tabs.js\")",
+      "PowerShell(node \"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--developer-firegang-call-audit-manual\\\\1000dbde-dc5a-4012-847b-54cf15eca402\\\\scratchpad\\\\resolve-gid.js\")",
+      "PowerShell(npx tsc --noEmit; if \\($?\\) { \"TYPECHECK OK\" }; npx eslint \"src/app/\\(dashboard\\)/dashboard/ghl-calls\" \"src/app/api/ghl\" src/lib/ghl-match.ts; if \\($?\\) { \"LINT CLEAN\" })",
+      "PowerShell(Copy-Item *)",
+      "PowerShell(npx eslint \"src/app/\\(dashboard\\)/dashboard/ghl-calls\"; if \\($?\\) { \"LINT CLEAN\" })",
+      "PowerShell(npx tsc --noEmit; if \\($?\\) { \"TYPECHECK OK\" }; npx eslint \"src/app/\\(dashboard\\)/dashboard/ghl-calls\"; if \\($?\\) { \"LINT CLEAN\" })",
+      "PowerShell($s=\"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--developer-firegang-call-audit-manual\\\\1000dbde-dc5a-4012-847b-54cf15eca402\\\\scratchpad\"; foreach\\($f in @\\(\"match\",\"month\",\"detect\"\\)\\){ Copy-Item \"$s\\\\$f.test.ts\" \"src\\\\__t.test.ts\"; npx tsx \"src\\\\__t.test.ts\" 2>&1 | Select-Object -Last 2; Remove-Item \"src\\\\__t.test.ts\" -Force })"
     ]
   }
 }
