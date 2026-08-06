@@ -112,8 +112,18 @@ export type GhlColumn = typeof GHL_COLUMNS[number]
 /** The recording URL lives only in our sheet, and is appended to the merged output. */
 export const OUR_RECORDING_COLUMN = 'Recording'
 
+/**
+ * Flags a call nobody picked up. There is no recording to listen to, which is
+ * the point — so a missed call is eligible for auditing on its own.
+ *
+ * Kept in the row's `data` (values: 'yes' / '') rather than as its own column,
+ * so marking calls needs no schema change and the flag ships with the sheet.
+ */
+export const MISSED_CALL_COLUMN = 'Missed call'
+export const MISSED_CALL_YES = 'yes'
+
 /** Column order of the reconciled sheet the admin reviews and ships. */
-export const MERGED_COLUMNS = [...GHL_COLUMNS, OUR_RECORDING_COLUMN] as const
+export const MERGED_COLUMNS = [...GHL_COLUMNS, OUR_RECORDING_COLUMN, MISSED_CALL_COLUMN] as const
 
 /** The three fields the two systems are joined on. */
 export const MATCH_COLUMNS: readonly string[] = ['Date & time', 'Contact phone', 'Duration']
@@ -132,14 +142,53 @@ export interface MatchedRow {
   data: Record<string, string>
 }
 
+// ── Eligibility ───────────────────────────────────────────────────────────────
+// Only eligible calls are sent for auditing. A call qualifies when there's a
+// recording to listen to, or when it's a missed call — where having no
+// recording is the finding, not a gap.
+
+/** The shape the eligibility rules need — both `MatchedRow` and a stored row fit. */
+type RowLike = { source: RowSource; data: Record<string, string> }
+
+export function hasRecording(row: RowLike): boolean {
+  return !!row.data[OUR_RECORDING_COLUMN]?.trim()
+}
+
+/**
+ * Missed either because the admin marked it, or because a *matched* call
+ * arrived with no recording URL: both systems agree the call happened, so a
+ * blank recording means it was never picked up.
+ */
+export function isMissedCall(row: RowLike): boolean {
+  if (row.data[MISSED_CALL_COLUMN]?.trim().toLowerCase() === MISSED_CALL_YES) return true
+  return row.source === 'matched' && !hasRecording(row)
+}
+
+/** True when the admin marked it by hand, as opposed to it being inferred above. */
+export function isMissedCallExplicit(row: RowLike): boolean {
+  return row.data[MISSED_CALL_COLUMN]?.trim().toLowerCase() === MISSED_CALL_YES
+}
+
+/**
+ * Eligible for auditing. Ineligible means an unmatched call with no recording
+ * URL and no missed-call mark — there is nothing for the auditor to work from.
+ */
+export function isEligible(row: RowLike): boolean {
+  return hasRecording(row) || isMissedCall(row)
+}
+
 export interface ReconcileSummary {
   ghl_total: number
   sheet_total: number
   matched: number
   ghl_only: number
   sheet_only: number
-  /** Rows that would ship without a recording URL — the audit can't run on these. */
+  /** Rows with no recording URL, missed calls included. */
   missing_recording: number
+  /** Marked or inferred as never picked up — eligible without a recording. */
+  missed_calls?: number
+  /** No recording and not a missed call — these are held back from the audit. */
+  ineligible?: number
 }
 
 export type ReconciliationStatus = 'draft' | 'verified' | 'submitted'
@@ -155,6 +204,8 @@ export interface GhlReconciliation {
   source_tab: string | null       // the tab of our sheet that was read
   submitted_at: string | null
   webhook_ref: string | null
+  /** The audit sheet n8n produced for this month, returned by the verify webhook. */
+  google_sheet_url: string | null
   created_at: string
   updated_at: string
 }

@@ -41,7 +41,7 @@ export async function DELETE(
   const { id } = await params
   const supabase = await createClient()
 
-  // Rows cascade via the FK.
+  // Rows cascade via the FK (see supabase-ghl-migration.sql).
   const { error } = await supabase.from('ghl_reconciliations').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

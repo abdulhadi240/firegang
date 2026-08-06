@@ -7,7 +7,7 @@
 // Calls are matched on date + phone + duration, in that order of trust.
 
 import type { GhlColumn, MatchedRow, ReconcileSummary, RowSource } from '@/types'
-import { GHL_COLUMNS, OUR_RECORDING_COLUMN } from '@/types'
+import { GHL_COLUMNS, OUR_RECORDING_COLUMN, isEligible, isMissedCall } from '@/types'
 
 // ── Normalisation ────────────────────────────────────────────────────────────
 
@@ -296,6 +296,10 @@ export function reconcile(
       ghl_only: ghlOnly,
       sheet_only: sheetOnly,
       missing_recording: rows.filter((r) => !r.data[OUR_RECORDING_COLUMN]).length,
+      // A matched call with no recording is already a missed call at this point;
+      // an unmatched one needs a URL or a mark before it can be audited.
+      missed_calls: rows.filter(isMissedCall).length,
+      ineligible:   rows.filter((r) => !isEligible(r)).length,
     },
   }
 }

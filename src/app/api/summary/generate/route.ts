@@ -20,6 +20,29 @@ async function generateHtmlForCompany(
   startDate: string,
   endDate: string
 ): Promise<string> {
+  // The external API pulls the calls itself — it only needs to know which
+  // company and which window.
+  const externalUrl = process.env.SUMMARY_API_URL
+  if (externalUrl) {
+    const res = await fetch(externalUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        company_id:   company.id,
+        company_name: company.name,
+        month:        monthName,
+        // Inclusive ISO-8601 range covering the selected month, e.g.
+        // start_date "2026-07-01" / end_date "2026-07-31".
+        start_date:   startDate,
+        end_date:     endDate,
+      }),
+    })
+    if (!res.ok) throw new Error(`External API returned ${res.status}`)
+    return extractSummaryHtml(await res.text())
+  }
+
+  // ── Claude fallback ────────────────────────────────────────────────────────
+  // Only this path needs the local audit rows summarised.
   const tagCount: Record<string, number> = {}
   const notes: string[] = []
   for (const r of results) {
@@ -38,31 +61,6 @@ async function generateHtmlForCompany(
     .map((n) => `<li>"${n}"</li>`)
     .join('')
 
-  const externalUrl = process.env.SUMMARY_API_URL
-  if (externalUrl) {
-    const res = await fetch(externalUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        company_id:   company.id,
-        company_name: company.name,
-        company_status: company.status,
-        total_calls:  results.length,
-        top_tags:     Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 10),
-        notes:        notes.slice(0, 5),
-        month:        monthName,
-        year,
-        // Inclusive ISO-8601 range covering the selected month, e.g.
-        // start_date "2026-07-01" / end_date "2026-07-31".
-        start_date:   startDate,
-        end_date:     endDate,
-      }),
-    })
-    if (!res.ok) throw new Error(`External API returned ${res.status}`)
-    return extractSummaryHtml(await res.text())
-  }
-
-  // ── Claude fallback ────────────────────────────────────────────────────────
   const prompt = `You are a professional call quality analyst for Firegang Dental Marketing.
 Write a ${monthName} ${year} monthly call audit report for the dental practice: ${company.name} [status: ${company.status}].
 

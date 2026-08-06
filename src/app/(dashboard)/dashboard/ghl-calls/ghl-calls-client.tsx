@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { UploadPanel } from './upload-panel'
 import {
   Plus, X, CalendarDays, CheckCircle2, FileSpreadsheet, ChevronRight,
-  Clock, AlertTriangle, Building2, ListChecks,
+  Clock, AlertTriangle, Building2, ListChecks, Trash2, Loader2,
 } from 'lucide-react'
 
 interface Props {
@@ -49,6 +49,26 @@ export function GhlCallsClient({
 }: Props) {
   const router = useRouter()
   const [showUpload, setShowUpload] = useState(reconciliations.length === 0)
+  // Deleting is two-step: the trash icon arms the confirm, the confirm commits.
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState('')
+
+  async function remove(r: GhlReconciliation) {
+    setDeletingId(r.id)
+    setDeleteError('')
+    try {
+      const res = await fetch(`/api/ghl/reconciliations/${r.id}`, { method: 'DELETE' })
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(payload.error ?? 'Delete failed')
+      setConfirmId(null)
+      router.refresh()
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const submittedCount = reconciliations.filter((r) => r.status === 'submitted').length
   const draftCount     = reconciliations.filter((r) => r.status !== 'submitted').length
@@ -136,6 +156,13 @@ export function GhlCallsClient({
         <span className="text-xs text-gray-400 tabular-nums">({reconciliations.length})</span>
       </div>
 
+      {deleteError && (
+        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl border border-red-100 bg-red-50 text-xs text-red-600">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          {deleteError}
+        </div>
+      )}
+
       {reconciliations.length === 0 ? (
         <div className="text-center py-16 text-gray-400 border border-dashed border-gray-200 rounded-2xl">
           <FileSpreadsheet className="w-10 h-10 mx-auto mb-3 opacity-20" />
@@ -149,15 +176,19 @@ export function GhlCallsClient({
           {reconciliations.map((r, idx) => {
             const s = r.summary ?? {}
             const gaps = (s.ghl_only ?? 0) + (s.sheet_only ?? 0)
-            const noRec = s.missing_recording ?? 0
+            // Older reconciliations predate the eligibility rules — fall back to
+            // the raw missing-recording count for those.
+            const ineligible = s.ineligible ?? s.missing_recording ?? 0
             return (
-              <Link
+              <div
                 key={r.id}
-                href={`/dashboard/ghl-calls/${r.id}`}
                 className="group flex items-center justify-between gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3.5 hover:border-orange-200 hover:shadow-sm transition-all duration-150 animate-fade-in-up"
                 style={{ animationDelay: `${idx * 40}ms` }}
               >
-                <div className="flex items-start gap-3 min-w-0">
+                <Link
+                  href={`/dashboard/ghl-calls/${r.id}`}
+                  className="flex items-start gap-3 min-w-0 flex-1"
+                >
                   <div className={cn(
                     'w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 mt-0.5',
                     r.status === 'submitted'
@@ -182,9 +213,9 @@ export function GhlCallsClient({
                           · {gaps} unmatched
                         </span>
                       )}
-                      {noRec > 0 && (
+                      {ineligible > 0 && (
                         <span className="text-[11px] text-red-500 inline-flex items-center gap-0.5">
-                          <AlertTriangle className="w-2.5 h-2.5" /> {noRec} no recording
+                          <AlertTriangle className="w-2.5 h-2.5" /> {ineligible} ineligible
                         </span>
                       )}
                     </div>
@@ -199,9 +230,59 @@ export function GhlCallsClient({
                           })}`}
                     </p>
                   </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 group-hover:text-[#E8431A] transition-colors" />
-              </Link>
+                </Link>
+
+                {/* Delete — two-step so a stray click can't drop a month's work */}
+                {confirmId === r.id ? (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="hidden sm:inline text-[11px] text-gray-500 mr-1">
+                      Delete {r.month} {r.year}
+                      {r.status === 'submitted' && ' (already sent for auditing)'}?
+                    </span>
+                    <button
+                      disabled={deletingId === r.id}
+                      onClick={() => remove(r)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 transition-colors"
+                    >
+                      {deletingId === r.id
+                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                        : <Trash2 className="w-3 h-3" />}
+                      Delete
+                    </button>
+                    <button
+                      disabled={deletingId === r.id}
+                      onClick={() => setConfirmId(null)}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 shrink-0">
+                    {r.google_sheet_url && (
+                      <a
+                        href={r.google_sheet_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open the audit sheet"
+                        aria-label={`Open the ${r.month} ${r.year} audit sheet`}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 hover:text-green-600 hover:bg-green-50 transition-colors"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                    <button
+                      onClick={() => { setConfirmId(r.id); setDeleteError('') }}
+                      title="Delete reconciliation"
+                      aria-label={`Delete ${r.month} ${r.year} reconciliation`}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-[#E8431A] transition-colors" />
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>

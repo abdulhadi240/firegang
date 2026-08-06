@@ -35,7 +35,11 @@
       "PowerShell(Copy-Item *)",
       "PowerShell(npx eslint \"src/app/\\(dashboard\\)/dashboard/ghl-calls\"; if \\($?\\) { \"LINT CLEAN\" })",
       "PowerShell(npx tsc --noEmit; if \\($?\\) { \"TYPECHECK OK\" }; npx eslint \"src/app/\\(dashboard\\)/dashboard/ghl-calls\"; if \\($?\\) { \"LINT CLEAN\" })",
-      "PowerShell($s=\"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--developer-firegang-call-audit-manual\\\\1000dbde-dc5a-4012-847b-54cf15eca402\\\\scratchpad\"; foreach\\($f in @\\(\"match\",\"month\",\"detect\"\\)\\){ Copy-Item \"$s\\\\$f.test.ts\" \"src\\\\__t.test.ts\"; npx tsx \"src\\\\__t.test.ts\" 2>&1 | Select-Object -Last 2; Remove-Item \"src\\\\__t.test.ts\" -Force })"
+      "PowerShell($s=\"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--developer-firegang-call-audit-manual\\\\1000dbde-dc5a-4012-847b-54cf15eca402\\\\scratchpad\"; foreach\\($f in @\\(\"match\",\"month\",\"detect\"\\)\\){ Copy-Item \"$s\\\\$f.test.ts\" \"src\\\\__t.test.ts\"; npx tsx \"src\\\\__t.test.ts\" 2>&1 | Select-Object -Last 2; Remove-Item \"src\\\\__t.test.ts\" -Force })",
+      "PowerShell(npx tsc --noEmit -p tsconfig.json)",
+      "PowerShell(npx eslint \"src/app/\\(dashboard\\)/dashboard/summary/summary-client.tsx\" \"src/app/api/summary/documents/route.ts\" \"src/app/api/summary/generate/route.ts\")",
+      "PowerShell(npx eslint \"src/app/\\(dashboard\\)/dashboard/ghl-calls\" \"src/app/api/ghl\" \"src/types/index.ts\" \"src/lib/ghl-match.ts\")",
+      "PowerShell(npx next build 2>&1 | Select-Object -Last 30)"
     ]
   }
 }

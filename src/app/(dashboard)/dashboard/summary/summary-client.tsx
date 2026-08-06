@@ -6,8 +6,8 @@ import { Company, SummaryDocument, ApprovalStatus, MONTH_NAMES, monthDateRange }
 import { cn, formatDate } from '@/lib/utils'
 import {
   Building2, FileText, CheckCheck, CalendarDays, Sparkles, Loader2,
-  ChevronRight, X, ChevronLeft, Check, Ban, Search, Trash2, AlertCircle, Clock,
-  ExternalLink, RefreshCw,
+  ChevronRight, X, ChevronLeft, ChevronsLeft, ChevronsRight, Check, Ban, Search,
+  Trash2, AlertCircle, Clock, ExternalLink, RefreshCw, MoreHorizontal,
 } from 'lucide-react'
 
 // Published summaries live in Teamwork Notebooks. `teamwork_ref` holds the notebook id.
@@ -48,6 +48,163 @@ function TeamworkPill({ published }: { published: boolean }) {
     <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-gray-50 text-gray-400 border-gray-100 font-medium">
       Not published
     </span>
+  )
+}
+
+// ── Pagination ────────────────────────────────────────────────────────────────
+// Numbered pages, truncated with ellipses so the control keeps a constant width
+// however many pages there are. All indices here are 1-based; the `page` prop
+// and `onChange` callback are 0-based to match the callers' slice maths.
+function pageWindow(current: number, total: number): (number | 'gap')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+
+  let start = Math.max(2, current - 1)
+  let end   = Math.min(total - 1, current + 1)
+  // Widen the window at the edges so the control doesn't change width there.
+  if (current <= 3)         { start = 2;          end = 4 }
+  if (current >= total - 2) { start = total - 3;  end = total - 1 }
+
+  const pages: (number | 'gap')[] = [1]
+  if (start > 2) pages.push('gap')
+  for (let p = start; p <= end; p++) pages.push(p)
+  if (end < total - 1) pages.push('gap')
+  pages.push(total)
+  return pages
+}
+
+function PageButton({
+  children, active, disabled, title, onClick,
+}: {
+  children: React.ReactNode
+  active?: boolean
+  disabled?: boolean
+  title?: string
+  onClick?: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'min-w-[2rem] h-8 px-2 rounded-lg text-xs font-medium tabular-nums transition-all duration-150 flex items-center justify-center',
+        active
+          ? 'bg-[#E8431A] text-white shadow-sm shadow-orange-200'
+          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+        disabled && 'opacity-30 cursor-not-allowed hover:bg-transparent hover:text-gray-600'
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function Pagination({
+  page,
+  totalPages,
+  totalItems,
+  pageSize,
+  itemLabel,
+  compact = false,
+  className,
+  onChange,
+}: {
+  page: number            // 0-based
+  totalPages: number
+  totalItems: number
+  pageSize: number
+  itemLabel: string       // plural noun, e.g. "companies"
+  compact?: boolean       // dialog footers: drop the range text and jump box
+  className?: string
+  onChange: (page: number) => void
+}) {
+  const [jump, setJump] = useState('')
+
+  if (totalPages <= 1) return null
+
+  const first = page * pageSize + 1
+  const last  = Math.min(totalItems, (page + 1) * pageSize)
+
+  function go(p: number) {
+    onChange(Math.min(totalPages - 1, Math.max(0, p)))
+  }
+
+  function submitJump(e: React.FormEvent) {
+    e.preventDefault()
+    const n = Number.parseInt(jump, 10)
+    if (Number.isFinite(n)) go(n - 1)
+    setJump('')
+  }
+
+  return (
+    <nav
+      aria-label="Pagination"
+      className={cn(
+        'flex flex-col sm:flex-row items-center justify-between gap-3 bg-white border border-gray-200 rounded-xl px-3 py-2.5',
+        !compact && 'shadow-sm',
+        className
+      )}
+    >
+      {!compact && (
+        <p className="text-xs text-gray-400 tabular-nums order-2 sm:order-1">
+          Showing <span className="font-semibold text-gray-700">{first}–{last}</span> of{' '}
+          <span className="font-semibold text-gray-700">{totalItems}</span> {itemLabel}
+        </p>
+      )}
+
+      <div className="flex items-center gap-1 order-1 sm:order-2">
+        <PageButton title="First page"    disabled={page === 0}              onClick={() => go(0)}>
+          <ChevronsLeft className="w-4 h-4" />
+        </PageButton>
+        <PageButton title="Previous page" disabled={page === 0}              onClick={() => go(page - 1)}>
+          <ChevronLeft className="w-4 h-4" />
+        </PageButton>
+
+        {/* Numbered pages — collapses to a page counter on narrow screens */}
+        <div className="hidden sm:flex items-center gap-1 mx-1">
+          {pageWindow(page + 1, totalPages).map((p, i) =>
+            p === 'gap' ? (
+              <span key={`gap-${i}`} className="w-6 flex items-center justify-center text-gray-300">
+                <MoreHorizontal className="w-3.5 h-3.5" />
+              </span>
+            ) : (
+              <PageButton key={p} active={p === page + 1} title={`Page ${p}`} onClick={() => go(p - 1)}>
+                {p}
+              </PageButton>
+            )
+          )}
+        </div>
+        <span className="sm:hidden mx-2 text-xs text-gray-500 tabular-nums">
+          {page + 1} / {totalPages}
+        </span>
+
+        <PageButton title="Next page" disabled={page >= totalPages - 1} onClick={() => go(page + 1)}>
+          <ChevronRight className="w-4 h-4" />
+        </PageButton>
+        <PageButton title="Last page" disabled={page >= totalPages - 1} onClick={() => go(totalPages - 1)}>
+          <ChevronsRight className="w-4 h-4" />
+        </PageButton>
+
+        {/* Jumping beats clicking once the list gets long */}
+        {!compact && totalPages > 5 && (
+          <form onSubmit={submitJump} className="hidden lg:flex items-center gap-1.5 ml-2 pl-2 border-l border-gray-100">
+            <label htmlFor="page-jump" className="text-xs text-gray-400">Go to</label>
+            <input
+              id="page-jump"
+              type="number"
+              min={1}
+              max={totalPages}
+              value={jump}
+              onChange={(e) => setJump(e.target.value)}
+              placeholder={`${page + 1}`}
+              className="w-14 h-8 px-2 text-xs text-center tabular-nums rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#E8431A]/30 focus:border-[#E8431A]"
+            />
+          </form>
+        )}
+      </div>
+    </nav>
   )
 }
 
@@ -327,24 +484,17 @@ function CompanyDialog({
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 shrink-0">
-            <button
-              disabled={page === 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 disabled:opacity-30 hover:text-gray-900 transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" /> Prev
-            </button>
-            <span className="text-xs text-gray-400 tabular-nums">
-              Page {page + 1} of {totalPages}
-            </span>
-            <button
-              disabled={page >= totalPages - 1}
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 disabled:opacity-30 hover:text-gray-900 transition-colors"
-            >
-              Next <ChevronRight className="w-4 h-4" />
-            </button>
+          <div className="px-3 py-2.5 border-t border-gray-100 shrink-0">
+            <Pagination
+              compact
+              page={page}
+              totalPages={totalPages}
+              totalItems={docs?.length ?? 0}
+              pageSize={PAGE_SIZE}
+              itemLabel="summaries"
+              className="border-0 bg-transparent px-0 py-0 justify-center"
+              onChange={setPage}
+            />
           </div>
         )}
       </div>
@@ -354,7 +504,7 @@ function CompanyDialog({
 
 // ── Generate dialog: pick up to 5 companies at a time ─────────────────────────
 const MAX_PER_BATCH = 5
-const COUNTDOWN_SECONDS = 30
+const COUNTDOWN_SECONDS = 50
 
 function GenerateDialog({
   companies,
@@ -504,7 +654,7 @@ function GenerateDialog({
   )
 }
 
-// ── Floating progress widget: engaging 30s countdown while summaries generate ─
+// ── Floating progress widget: engaging 50s countdown while summaries generate ─
 const LOADING_MESSAGES = [
   'Analyzing audited calls…',
   'Counting issue tags…',
@@ -627,10 +777,14 @@ function GeneratingWidget({
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
+const COMPANIES_PER_PAGE = 50
+
 export function SummaryClient({ companies, monthDocuments, month, year }: Props) {
   const router = useRouter()
   const [showGenerate, setShowGenerate] = useState(false)
   const [openCompany, setOpenCompany] = useState<Company | null>(null)
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(0)
   const [genJob, setGenJob] = useState<
     { count: number; status: 'running' | 'done' | 'error' } | null
   >(null)
@@ -699,6 +853,27 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
         }),
     [companies, docByCompany]
   )
+
+  const visibleCompanies = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return companiesWithSummary
+    return companiesWithSummary.filter((c) => c.name.toLowerCase().includes(q))
+  }, [companiesWithSummary, search])
+
+  // Back to page 1 whenever the result set changes under the current page.
+  // Adjusted during render (not in an effect) so there's no flash of a stale page.
+  const resetKey = `${month}|${year}|${search}`
+  const [pagedFor, setPagedFor] = useState(resetKey)
+  if (pagedFor !== resetKey) {
+    setPagedFor(resetKey)
+    setPage(0)
+  }
+
+  const totalPages  = Math.max(1, Math.ceil(visibleCompanies.length / COMPANIES_PER_PAGE))
+  // Clamp rather than trust `page` — the list can shrink between renders.
+  const safePage    = Math.min(page, totalPages - 1)
+  const pageStart   = safePage * COMPANIES_PER_PAGE
+  const pageCompanies = visibleCompanies.slice(pageStart, pageStart + COMPANIES_PER_PAGE)
 
   const publishedCount = useMemo(
     () => monthDocuments.filter((d) => d.teamwork_inserted_at).length,
@@ -776,10 +951,35 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
       </div>
 
       {/* ── Companies with a summary this month ───────────────────────────── */}
-      <div className="flex items-center gap-2 mb-5">
-        <FileText className="w-4 h-4 text-gray-400" />
-        <h2 className="text-sm font-semibold text-gray-700">Companies with a {monthLabel} summary</h2>
-        <span className="text-xs text-gray-400 tabular-nums">({companiesWithSummary.length})</span>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-gray-400" />
+          <h2 className="text-sm font-semibold text-gray-700">Companies with a {monthLabel} summary</h2>
+          <span className="text-xs text-gray-400 tabular-nums">
+            ({search.trim() ? `${visibleCompanies.length} of ${companiesWithSummary.length}` : companiesWithSummary.length})
+          </span>
+        </div>
+
+        {companiesWithSummary.length > 0 && (
+          <div className="relative sm:w-64 shrink-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search companies…"
+              className="w-full pl-8 pr-8 py-2 text-sm rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#E8431A]/30 focus:border-[#E8431A]"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                title="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-md flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {companiesWithSummary.length === 0 ? (
@@ -788,9 +988,17 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
           <p className="text-sm">No summaries generated for {monthLabel} yet.</p>
           <p className="text-xs mt-1 text-gray-300">Use the button above to generate them.</p>
         </div>
+      ) : visibleCompanies.length === 0 ? (
+        <div className="text-center py-16 text-gray-400 animate-fade-in border border-dashed border-gray-200 rounded-2xl">
+          <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
+          <p className="text-sm">No companies match &ldquo;{search}&rdquo;.</p>
+          <button onClick={() => setSearch('')} className="text-xs mt-1 text-[#E8431A] hover:underline">
+            Clear search
+          </button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
-          {companiesWithSummary.map((company, idx) => {
+          {pageCompanies.map((company, idx) => {
             const doc = docByCompany.get(company.id)!
             const published = !!doc.teamwork_inserted_at
             const twUrl = teamworkUrl(doc.teamwork_ref)
@@ -845,6 +1053,17 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
           })}
         </div>
       )}
+
+      {/* ── Pagination (50 per page) ──────────────────────────────────────── */}
+      <Pagination
+        page={safePage}
+        totalPages={totalPages}
+        totalItems={visibleCompanies.length}
+        pageSize={COMPANIES_PER_PAGE}
+        itemLabel="companies"
+        className="mt-5"
+        onChange={setPage}
+      />
 
       {openCompany && (
         <CompanyDialog company={openCompany} onClose={() => setOpenCompany(null)} />

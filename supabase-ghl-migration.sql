@@ -30,6 +30,8 @@ create table public.ghl_reconciliations (
   source_tab    text,
   submitted_at  timestamptz,
   webhook_ref   text,
+  -- The audit sheet n8n produces for the month, returned by the webhook.
+  google_sheet_url text,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
