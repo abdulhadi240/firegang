@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { GhlReconciliation, ReconciliationStatus } from '@/types'
+import { GhlReconciliation, ReconciliationStatus, isReconciliationLocked } from '@/types'
 import { cn } from '@/lib/utils'
 import { UploadPanel } from './upload-panel'
 import {
@@ -21,13 +21,15 @@ interface Props {
 const STATUS_STYLES: Record<ReconciliationStatus, string> = {
   draft:     'bg-gray-50 text-gray-500 border-gray-200',
   verified:  'bg-blue-50 text-blue-600 border-blue-100',
-  submitted: 'bg-green-50 text-green-600 border-green-100',
+  submitted: 'bg-amber-50 text-amber-600 border-amber-100',
+  audited:   'bg-green-50 text-green-600 border-green-100',
 }
 
 const STATUS_LABELS: Record<ReconciliationStatus, string> = {
   draft:     'In review',
   verified:  'Verified',
   submitted: 'Sent for auditing',
+  audited:   'Audited successfully',
 }
 
 function StatusPill({ status }: { status: ReconciliationStatus }) {
@@ -70,13 +72,14 @@ export function GhlCallsClient({
     }
   }
 
-  const submittedCount = reconciliations.filter((r) => r.status === 'submitted').length
-  const draftCount     = reconciliations.filter((r) => r.status !== 'submitted').length
+  const auditedCount = reconciliations.filter((r) => r.status === 'audited').length
+  const sentCount    = reconciliations.filter((r) => isReconciliationLocked(r.status)).length
+  const draftCount   = reconciliations.length - sentCount
   const totalCalls     = reconciliations.reduce((n, r) => n + (r.summary?.matched ?? 0), 0)
 
   const stats = [
     { label: 'Reconciliations', value: reconciliations.length, sub: 'all months',       icon: ListChecks,  color: 'text-blue-600',   bg: 'bg-blue-50',   border: 'border-blue-100' },
-    { label: 'Sent for audit',  value: submittedCount,         sub: 'completed',        icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50',  border: 'border-green-100' },
+    { label: 'Audited',         value: auditedCount,           sub: 'report ready',     icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50',  border: 'border-green-100' },
     { label: 'In review',       value: draftCount,             sub: 'not yet sent',     icon: Clock,       color: 'text-amber-600',  bg: 'bg-amber-50',  border: 'border-amber-100' },
     { label: 'Matched calls',   value: totalCalls,             sub: 'across all months', icon: FileSpreadsheet, color: 'text-[#E8431A]', bg: 'bg-orange-50', border: 'border-orange-100' },
   ]
@@ -191,11 +194,11 @@ export function GhlCallsClient({
                 >
                   <div className={cn(
                     'w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 mt-0.5',
-                    r.status === 'submitted'
+                    r.status === 'audited'
                       ? 'bg-green-50 border-green-100'
                       : 'bg-orange-50 border-orange-100'
                   )}>
-                    {r.status === 'submitted'
+                    {r.status === 'audited'
                       ? <CheckCircle2 className="w-4 h-4 text-green-600" />
                       : <Clock className="w-4 h-4 text-[#E8431A]" />}
                   </div>

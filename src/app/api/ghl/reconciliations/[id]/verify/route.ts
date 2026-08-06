@@ -3,7 +3,9 @@ import { isAuthenticated, ADMIN_USER_ID } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import {
   MERGED_COLUMNS, monthDateRange, GhlReconciliationRow, isEligible, isMissedCall,
+  isReconciliationLocked,
 } from '@/types'
+import { pickString } from '@/lib/n8n'
 
 // The admin has reviewed the merged sheet and confirmed the figures — ship it to
 // n8n, which runs the audit and produces the output sheet.
@@ -14,32 +16,6 @@ import {
 //
 // Excluded rows are dropped here rather than deleted in the UI, so the record of
 // what was reviewed stays intact.
-/**
- * Pull the first of `keys` that carries a value out of the webhook's reply.
- *
- * n8n answers with either a bare object or a single-item array, and routinely
- * nests the useful part under `data` / `json` / `body`, so look through all of
- * those rather than assuming one shape.
- */
-function pickString(payload: unknown, keys: string[]): string | null {
-  const roots = Array.isArray(payload) ? payload.slice(0, 1) : [payload]
-  for (const root of roots) {
-    if (!root || typeof root !== 'object') continue
-    const obj = root as Record<string, unknown>
-
-    for (const key of keys) {
-      const v = obj[key]
-      if (typeof v === 'string' && v.trim()) return v.trim()
-      if (typeof v === 'number') return String(v)
-    }
-    for (const nested of ['data', 'json', 'body', 'result']) {
-      const found = pickString(obj[nested], keys)
-      if (found) return found
-    }
-  }
-  return null
-}
-
 const SHEET_URL_KEYS = ['google_sheet_url', 'googleSheetUrl', 'sheet_url', 'sheetUrl']
 const REF_KEYS       = ['execution_id', 'executionId', 'id', 'ref']
 
@@ -75,7 +51,7 @@ export async function POST(
   if (reconErr || !recon) return NextResponse.json({ error: 'Reconciliation not found' }, { status: 404 })
   if (rowsErr)            return NextResponse.json({ error: rowsErr.message }, { status: 500 })
 
-  if (recon.status === 'submitted') {
+  if (isReconciliationLocked(recon.status)) {
     return NextResponse.json({ error: 'This reconciliation has already been submitted' }, { status: 409 })
   }
 

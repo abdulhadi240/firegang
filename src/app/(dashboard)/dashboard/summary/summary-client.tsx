@@ -39,6 +39,18 @@ function ApprovalPill({ status }: { status: ApprovalStatus }) {
   )
 }
 
+// The row exists but the workflow hasn't written the report into it yet.
+function GeneratingPill() {
+  return (
+    <span
+      className="text-[10px] px-1.5 py-0.5 rounded-full border bg-orange-50 text-[#E8431A] border-orange-100 font-medium inline-flex items-center gap-1"
+      title="The report is still being generated — it will appear here shortly"
+    >
+      <Loader2 className="w-2.5 h-2.5 animate-spin" /> Generating
+    </span>
+  )
+}
+
 function TeamworkPill({ published }: { published: boolean }) {
   return published ? (
     <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-blue-50 text-blue-600 border-blue-100 font-medium inline-flex items-center gap-0.5">
@@ -375,8 +387,14 @@ function CompanyDialog({
                           Created {formatDate(doc.created_at)}
                         </p>
                         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                          <ApprovalPill status={doc.approval_status} />
-                          <TeamworkPill published={published} />
+                          {doc.is_generating ? (
+                            <GeneratingPill />
+                          ) : (
+                            <>
+                              <ApprovalPill status={doc.approval_status} />
+                              <TeamworkPill published={published} />
+                            </>
+                          )}
                         </div>
                       </div>
                       <span className="text-[11px] text-gray-400 inline-flex items-center gap-1 shrink-0 group-hover:text-[#E8431A] transition-colors">
@@ -431,8 +449,9 @@ function CompanyDialog({
                     )}
                   </div>
 
-                  {/* Approve / disapprove — only while not published to Teamwork */}
-                  {!published && (
+                  {/* Approve / disapprove — once there's a report to judge, and
+                      only while it hasn't gone to Teamwork yet */}
+                  {!published && !doc.is_generating && (
                     <div className="flex items-center gap-2 px-4 py-2.5 border-t border-gray-100 bg-gray-50/60">
                       <button
                         disabled={busy}
@@ -839,20 +858,27 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
     return m
   }, [monthDocuments])
 
+  // Driven by the documents, not the company list: summaries also arrive for
+  // practices that aren't in the companies table (the GHL flow runs for one),
+  // and filtering by `companies` would hide those entirely.
   // Latest summarized account first: sort by the summary's created date (desc).
-  const companiesWithSummary = useMemo(
-    () =>
-      companies
-        .filter((c) => docByCompany.has(c.id))
-        .sort((a, b) => {
-          const da = docByCompany.get(a.id)!
-          const db = docByCompany.get(b.id)!
-          return (
-            new Date(db.created_at).getTime() - new Date(da.created_at).getTime()
-          )
-        }),
-    [companies, docByCompany]
-  )
+  const companiesWithSummary = useMemo(() => {
+    const byId = new Map(companies.map((c) => [c.id, c]))
+    return monthDocuments
+      .map((doc): Company =>
+        byId.get(doc.company_id) ?? {
+          id: doc.company_id,
+          name: doc.company_name,
+          status: 'active',
+          created_at: doc.created_at,
+        }
+      )
+      .sort((a, b) => {
+        const da = docByCompany.get(a.id)!
+        const db = docByCompany.get(b.id)!
+        return new Date(db.created_at).getTime() - new Date(da.created_at).getTime()
+      })
+  }, [companies, monthDocuments, docByCompany])
 
   const visibleCompanies = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -1018,8 +1044,14 @@ export function SummaryClient({ companies, monthDocuments, month, year }: Props)
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">{company.name}</p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <ApprovalPill status={doc.approval_status} />
-                      <TeamworkPill published={published} />
+                      {doc.is_generating ? (
+                        <GeneratingPill />
+                      ) : (
+                        <>
+                          <ApprovalPill status={doc.approval_status} />
+                          <TeamworkPill published={published} />
+                        </>
+                      )}
                     </div>
                   </div>
                 </button>

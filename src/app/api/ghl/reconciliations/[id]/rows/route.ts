@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthenticated } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
-import { MERGED_COLUMNS, RowSource } from '@/types'
+import { MERGED_COLUMNS, RowSource, isReconciliationLocked } from '@/types'
 
 // Edits to the review grid: add a missing call by hand, correct a cell, or drop
 // a row. Any edit knocks the reconciliation back to `draft` so a previously
@@ -20,7 +20,9 @@ async function assertEditable(
     .single()
 
   if (error || !data) return 'Reconciliation not found'
-  if (data.status === 'submitted') return 'This reconciliation has already been submitted and can no longer be edited'
+  if (isReconciliationLocked(data.status)) {
+    return 'This reconciliation has already been submitted and can no longer be edited'
+  }
   return null
 }
 

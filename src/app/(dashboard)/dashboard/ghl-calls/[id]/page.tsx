@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { GhlReconciliation, GhlReconciliationRow } from '@/types'
 import { ReconciliationClient } from './reconciliation-client'
+import { ensureSummaryDocument } from '@/lib/ghl-document'
 
 const PRACTICE_NAME = process.env.GHL_PRACTICE_NAME ?? 'Gillespie Dentistry'
 
@@ -26,6 +27,13 @@ export default async function ReconciliationPage({
     .select('id, reconciliation_id, source, data, excluded, position')
     .eq('reconciliation_id', id)
     .order('position', { ascending: true })
+
+  // n8n writes the approved month's report into `teamwork_document`. Promote it
+  // into a summary document so the hand-off link is never a dead end — the
+  // admin reviews and publishes it through the normal summary flow from there.
+  if (recon.sheet_approval_status === 'approved' && !recon.summary_document_id) {
+    recon.summary_document_id = await ensureSummaryDocument(supabase, recon)
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">

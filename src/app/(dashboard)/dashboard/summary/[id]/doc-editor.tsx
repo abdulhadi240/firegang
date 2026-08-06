@@ -49,6 +49,10 @@ export function DocEditor({ document: initialDoc }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  // The row is reserved before generation runs, so an empty body means the
+  // report hasn't been written back yet rather than an actually blank document.
+  const generating = !extractSummaryHtml(initialDoc.html_content).trim()
+
   // Set initial HTML once on mount (unwrap any JSON envelope / plain text)
   useEffect(() => {
     if (editorRef.current) {
@@ -211,8 +215,9 @@ export function DocEditor({ document: initialDoc }: Props) {
             Created {formatDate(initialDoc.created_at)}
           </span>
 
-          {/* Approve / disapprove — hidden once published to Teamwork */}
-          {!teamworkDone && (
+          {/* Approve / disapprove — once there's a report to judge, and hidden
+              once published to Teamwork */}
+          {!teamworkDone && !generating && (
             <div className="flex items-center gap-1 shrink-0">
               <button
                 onClick={() => decide('approved')}
@@ -342,11 +347,32 @@ export function DocEditor({ document: initialDoc }: Props) {
       <div className="flex-1 py-4 sm:py-8 px-2 sm:px-8 flex justify-center">
         <div className="w-full max-w-[816px]">
           {/* White A4-like paper */}
-          <div className="bg-white shadow-xl rounded-sm min-h-[70vh] sm:min-h-[1056px]">
+          <div className="bg-white shadow-xl rounded-sm min-h-[70vh] sm:min-h-[1056px] relative">
+            {/* The row is reserved before the report is written, so an empty
+                body means the generation workflow hasn't finished yet. */}
+            {generating && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center px-6 bg-white/80 backdrop-blur-[1px] rounded-sm">
+                <div className="w-12 h-12 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center mb-4">
+                  <Loader2 className="w-5 h-5 text-[#E8431A] animate-spin" />
+                </div>
+                <p className="text-sm font-semibold text-gray-900">Generating this report…</p>
+                <p className="text-xs text-gray-400 mt-1 max-w-xs">
+                  The audit summary is still being written. This page will fill in
+                  once it lands — usually under a minute.
+                </p>
+                <button
+                  onClick={() => router.refresh()}
+                  className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-white border border-gray-200 text-gray-600 hover:border-orange-200 hover:text-[#E8431A] shadow-sm transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Check again
+                </button>
+              </div>
+            )}
+
             {/* Paper content area — padding scales down on small screens */}
             <div
               ref={editorRef}
-              contentEditable
+              contentEditable={!generating}
               suppressContentEditableWarning
               onInput={scheduleAutoSave}
               className="doc-editor min-h-[70vh] sm:min-h-[1056px] px-5 py-8 sm:px-[72px] sm:py-[96px] focus:outline-none"

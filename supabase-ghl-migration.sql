@@ -24,14 +24,23 @@ create table public.ghl_reconciliations (
   month         text not null,
   year          int  not null,
   status        text not null default 'draft'
-                  check (status in ('draft', 'verified', 'submitted')),
+                  check (status in ('draft', 'verified', 'submitted', 'audited')),
   -- Counts from the merge: totals, matched, unmatched each way, missing recordings.
   summary       jsonb not null default '{}'::jsonb,
   source_tab    text,
   submitted_at  timestamptz,
   webhook_ref   text,
-  -- The audit sheet n8n produces for the month, returned by the webhook.
+  -- The audit sheet n8n produces for the month, returned by the webhook, and
+  -- the admin's sign-off on it. Approving ships the sheet back out to n8n.
   google_sheet_url text,
+  sheet_approval_status text not null default 'pending'
+                  check (sheet_approval_status in ('pending', 'approved', 'disapproved')),
+  sheet_approval_decided_at timestamptz,
+  -- The report HTML n8n writes back once the sheet is approved, and the
+  -- summary_documents row it gets promoted into so the admin can review and
+  -- publish it through the normal summary flow.
+  teamwork_document   text,
+  summary_document_id text,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );

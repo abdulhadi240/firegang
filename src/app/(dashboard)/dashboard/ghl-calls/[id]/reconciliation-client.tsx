@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -17,12 +17,14 @@ import {
   isEligible,
   isMissedCall,
   isMissedCallExplicit,
+  isReconciliationLocked,
+  ApprovalStatus,
 } from '@/types'
 import { cn } from '@/lib/utils'
 import {
   Loader2, X, Check, AlertTriangle, ChevronLeft, Plus, Trash2, Link2, Send,
   Search, EyeOff, Eye, CheckCircle2, Pencil, PhoneMissed, FileSpreadsheet,
-  ExternalLink,
+  ExternalLink, Ban, FileText, ChevronRight, RefreshCw,
 } from 'lucide-react'
 
 interface Props {
@@ -43,6 +45,10 @@ const GRID_COLUMNS = [
 ] as const
 
 type FilterKey = 'all' | 'ineligible' | 'eligible' | 'excluded'
+
+// Roughly how long n8n takes to turn an approved sheet into a document. Only
+// drives the waiting UI — the request finishes when it finishes.
+const DOC_COUNTDOWN_SECONDS = 30
 
 // ── Eligibility badge ────────────────────────────────────────────────────────
 
@@ -243,10 +249,34 @@ export function ReconciliationClient({ practiceName, reconciliation, initialRows
   const [saving, setSaving] = useState(false)
   const [busyRowId, setBusyRowId] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
+  // Which side of the approve/disapprove toggle is mid-flight, if any.
+  const [decidingSheet, setDecidingSheet] = useState<ApprovalStatus | null>(null)
+  // Shown next to the toggle: the page banner sits far above this panel, so a
+  // failure reported only up there reads as the button doing nothing.
+  const [sheetError, setSheetError] = useState('')
+  const [findingDoc, setFindingDoc] = useState(false)
+  // The approve request stays open while n8n builds the document, so give the
+  // wait a shape rather than leaving the button spinning silently.
+  const [countdown, setCountdown] = useState(DOC_COUNTDOWN_SECONDS)
+  useEffect(() => {
+    if (decidingSheet !== 'approved') return
+    setCountdown(DOC_COUNTDOWN_SECONDS)
+    const t = setInterval(() => setCountdown((s) => (s > 0 ? s - 1 : 0)), 1000)
+    return () => clearInterval(t)
+  }, [decidingSheet])
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
+  // The banner sits above a long grid, so bring it into view when it changes —
+  // otherwise an action taken at the bottom of the page appears to do nothing.
+  const bannerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (banner) bannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [banner])
+
   const monthLabel = `${recon.month} ${recon.year}`
-  const submitted = recon.status === 'submitted'
+  // `audited` counts as submitted here: the grid is read-only from then on.
+  const submitted = isReconciliationLocked(recon.status)
+  const audited   = recon.status === 'audited'
 
   // Recompute live so the counts track the admin's edits rather than the
   // figures frozen at upload time.
@@ -397,6 +427,76 @@ export function ReconciliationClient({ practiceName, reconciliation, initialRows
     }
   }
 
+  // n8n writes the report asynchronously, so it can land after the approval
+  // request has already returned. This promotes it whenever it shows up.
+  async function findDocument() {
+    setFindingDoc(true)
+    setSheetError('')
+    try {
+      const res = await fetch(`/api/ghl/reconciliations/${recon.id}/document`, { method: 'POST' })
+      const payload = await res.json()
+      if (!res.ok) throw new Error(payload.error ?? 'Could not look up the document')
+      if (payload.summary_document_id) {
+        setRecon((r) => ({
+          ...r,
+          summary_document_id: payload.summary_document_id,
+          status: payload.status ?? r.status,
+        }))
+      } else {
+        setSheetError('n8n still hasn’t written the report for this month.')
+      }
+      router.refresh()
+    } catch (err: unknown) {
+      setSheetError(err instanceof Error ? err.message : 'Could not look up the document')
+    } finally {
+      setFindingDoc(false)
+    }
+  }
+
+  // Sign off on the sheet n8n produced. Approving hands it back to n8n with the
+  // practice name and month; disapproving just records the decision.
+  async function decideSheet(decision: ApprovalStatus) {
+    if (decision === recon.sheet_approval_status) return
+    setDecidingSheet(decision)
+    setBanner(null)
+    setSheetError('')
+    try {
+      const res = await fetch(`/api/ghl/reconciliations/${recon.id}/sheet-approval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision }),
+      })
+      const payload = await res.json()
+      if (!res.ok) throw new Error(payload.error ?? 'Could not record the decision')
+      setRecon((r) => ({
+        ...r,
+        sheet_approval_status:     payload.sheet_approval_status,
+        sheet_approval_decided_at: payload.sheet_approval_decided_at,
+        // The row n8n wrote the report into — reviewed via the summary flow.
+        summary_document_id: payload.summary_document_id ?? r.summary_document_id,
+        // Settles to `audited` as soon as that document exists.
+        status: payload.status ?? r.status,
+      }))
+      // Re-read on the server too, so the reconciliations list and the
+      // document lookup stay in step with what just happened.
+      router.refresh()
+      setBanner({
+        kind: 'ok',
+        text: decision === 'approved'
+          ? payload.summary_document_id
+            ? 'Audit sheet approved — the document is ready to review.'
+            : 'Audit sheet approved. The document will appear in Summary shortly.'
+          : 'Audit sheet marked as disapproved. No document was created.',
+      })
+    } catch (err: unknown) {
+      const text = err instanceof Error ? err.message : 'Could not record the decision'
+      setSheetError(text)
+      setBanner({ kind: 'err', text })
+    } finally {
+      setDecidingSheet(null)
+    }
+  }
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   const stats = [
@@ -429,7 +529,7 @@ export function ReconciliationClient({ practiceName, reconciliation, initialRows
       </div>
 
       {banner && (
-        <div className={cn(
+        <div ref={bannerRef} className={cn(
           'flex items-start gap-2 px-4 py-3 rounded-xl border text-sm mb-5',
           banner.kind === 'ok'
             ? 'bg-green-50 border-green-100 text-green-700'
@@ -646,35 +746,210 @@ export function ReconciliationClient({ practiceName, reconciliation, initialRows
       {/* ── Verify ────────────────────────────────────────────────────────── */}
       <div className="mt-6 bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
         {submitted ? (
-          <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-lg bg-green-50 border border-green-100 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-4 h-4 text-green-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-gray-900">
-                {monthLabel} sent for auditing
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {recon.submitted_at && new Date(recon.submitted_at).toLocaleString('en-US')}
-                {recon.webhook_ref && ` · ref ${recon.webhook_ref}`}
-              </p>
-
-              {/* The sheet n8n produced for this month */}
-              {recon.google_sheet_url ? (
-                <a
-                  href={recon.google_sheet_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-700 hover:border-green-300 hover:text-green-700 hover:shadow-sm transition-colors"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-green-600" />
-                  Open the audit sheet
-                  <ExternalLink className="w-3.5 h-3.5 opacity-50" />
-                </a>
-              ) : (
-                <p className="text-xs text-gray-400 mt-2">
-                  The audit sheet link will appear here once n8n returns it.
+          <div className="space-y-5">
+            {/* Sent ────────────────────────────────────────────────────────── */}
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-green-50 border border-green-100 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4 text-green-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900">
+                  {audited
+                    ? `${monthLabel} audited successfully`
+                    : `${monthLabel} sent for auditing`}
                 </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {recon.submitted_at && new Date(recon.submitted_at).toLocaleString('en-US')}
+                  {recon.webhook_ref && ` · ref ${recon.webhook_ref}`}
+                </p>
+              </div>
+            </div>
+
+            {/* The sheet n8n produced, and the sign-off on it ───────────────── */}
+            <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center shrink-0">
+                    <FileSpreadsheet className={cn(
+                      'w-4 h-4',
+                      recon.google_sheet_url ? 'text-green-600' : 'text-gray-300'
+                    )} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">Audit sheet</p>
+                    {recon.google_sheet_url ? (
+                      <a
+                        href={recon.google_sheet_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline break-all"
+                      >
+                        Open in Google Sheets
+                        <ExternalLink className="w-3 h-3 shrink-0" />
+                      </a>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-1">
+                        Waiting for n8n to return the sheet for this month.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {recon.google_sheet_url && (
+                  decidingSheet === 'approved' ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap shrink-0 bg-blue-50 text-blue-600 border-blue-100">
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" /> Creating doc…
+                    </span>
+                  ) : (
+                    <span className={cn(
+                      'inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap shrink-0',
+                      recon.sheet_approval_status === 'approved'
+                        ? 'bg-green-50 text-green-600 border-green-100'
+                        : recon.sheet_approval_status === 'disapproved'
+                          ? 'bg-red-50 text-red-500 border-red-100'
+                          : 'bg-amber-50 text-amber-600 border-amber-100'
+                    )}>
+                      {recon.sheet_approval_status === 'approved'
+                        ? 'Approved'
+                        : recon.sheet_approval_status === 'disapproved'
+                          ? 'Disapproved'
+                          : 'Awaiting review'}
+                    </span>
+                  )
+                )}
+              </div>
+
+              {/* Both options stay on screen, so the decision is always visible
+                  and always changeable. */}
+              {recon.google_sheet_url && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <p className="text-xs text-gray-500 mb-2.5">
+                    {recon.sheet_approval_status === 'pending'
+                      ? 'Review the sheet, then approve it to create the Teamwork document.'
+                      : recon.sheet_approval_status === 'approved'
+                        ? 'Approved and handed to Teamwork.'
+                        : 'Disapproved. Approve to create the Teamwork document.'}
+                  </p>
+
+                  {/* In flight: n8n is turning the sheet into the document. */}
+                  {decidingSheet === 'approved' && (
+                    <div className="flex items-start gap-2.5 mb-3 px-3 py-2.5 rounded-lg border border-blue-100 bg-blue-50">
+                      <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0 mt-px" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-blue-800">
+                          Creating the document…
+                          <span className="ml-1.5 tabular-nums opacity-70">
+                            {countdown > 0 ? `${countdown}s` : 'almost there'}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-blue-600/80 mt-0.5">
+                          n8n is writing the report from the approved sheet. It lands in
+                          Summary, where you review and approve it as usual.
+                        </p>
+                        <div className="mt-2 h-1 bg-blue-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 rounded-full transition-all duration-1000 ease-linear"
+                            style={{
+                              width: `${Math.min(95, ((DOC_COUNTDOWN_SECONDS - countdown) / DOC_COUNTDOWN_SECONDS) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Done: hand off to the summary flow, which owns review,
+                      approval and publishing to Teamwork. */}
+                  {recon.sheet_approval_status === 'approved' && decidingSheet === null && (
+                    <div className="flex flex-wrap items-center gap-2 mb-3 px-3 py-2.5 rounded-lg border border-green-100 bg-green-50">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-600 shrink-0" />
+                      <p className="text-xs text-green-800 flex-1 min-w-0">
+                        {recon.summary_document_id
+                          ? 'The document is ready to review.'
+                          : "n8n hasn't written the document yet."}
+                      </p>
+                      {recon.summary_document_id ? (
+                        <Link
+                          href={`/dashboard/summary/${recon.summary_document_id}`}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-green-200 text-green-700 hover:bg-green-100 transition-colors shrink-0"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          Review &amp; approve document
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </Link>
+                      ) : (
+                        // Promotes the report as soon as n8n writes it, which
+                        // beats dropping the admin on the Summary list.
+                        <button
+                          onClick={findDocument}
+                          disabled={findingDoc}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-green-200 text-green-700 hover:bg-green-100 disabled:opacity-50 transition-colors shrink-0"
+                        >
+                          {findingDoc
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <RefreshCw className="w-3.5 h-3.5" />}
+                          Check again
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <div className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-xl p-1 shadow-sm">
+                      {([
+                        ['approved',    'Approve',    Check],
+                        ['disapproved', 'Disapprove', Ban],
+                      ] as const).map(([value, label, Icon]) => {
+                        const active = recon.sheet_approval_status === value
+                        const busy   = decidingSheet === value
+                        return (
+                          <button
+                            key={value}
+                            onClick={() => decideSheet(value)}
+                            disabled={decidingSheet !== null || active}
+                            aria-pressed={active}
+                            title={active ? `Already ${value}` : `Mark as ${value}`}
+                            className={cn(
+                              'inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                              active
+                                ? value === 'approved'
+                                  ? 'bg-green-600 text-white shadow-sm disabled:opacity-100'
+                                  : 'bg-red-500 text-white shadow-sm disabled:opacity-100'
+                                : cn(
+                                    'text-gray-600 hover:bg-gray-50 disabled:opacity-40',
+                                    value === 'approved' ? 'hover:text-green-700' : 'hover:text-red-600'
+                                  )
+                            )}
+                          >
+                            {busy
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <Icon className="w-3.5 h-3.5" />}
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {recon.sheet_approval_decided_at && (
+                      <span className="text-[11px] text-gray-400">
+                        Decided {new Date(recon.sheet_approval_decided_at).toLocaleString('en-US')}
+                      </span>
+                    )}
+                  </div>
+
+                  {sheetError && (
+                    <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg border border-red-100 bg-red-50 text-xs text-red-600">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                      <span className="flex-1">{sheetError}</span>
+                      <button
+                        onClick={() => setSheetError('')}
+                        className="shrink-0 opacity-60 hover:opacity-100"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>

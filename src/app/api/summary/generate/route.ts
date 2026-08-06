@@ -18,16 +18,19 @@ async function generateHtmlForCompany(
   monthName: string,
   year: number,
   startDate: string,
-  endDate: string
-): Promise<string> {
+  endDate: string,
+  documentId: string
+): Promise<string | null> {
   // The external API pulls the calls itself — it only needs to know which
-  // company and which window.
+  // company and which window, plus the row to write the result back to.
   const externalUrl = process.env.SUMMARY_API_URL
   if (externalUrl) {
     const res = await fetch(externalUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        // summary_documents.id — the row reserved for this month's report.
+        summary_document_id: documentId,
         company_id:   company.id,
         company_name: company.name,
         month:        monthName,
@@ -38,7 +41,12 @@ async function generateHtmlForCompany(
       }),
     })
     if (!res.ok) throw new Error(`External API returned ${res.status}`)
-    return extractSummaryHtml(await res.text())
+
+    // The workflow writes the finished report into the reserved row itself and
+    // publishes it to Teamwork. If it also echoes the HTML back, take it;
+    // otherwise return null so we leave `html_content` alone rather than
+    // racing that write with an empty value.
+    return extractSummaryHtml(await res.text()) || null
   }
 
   // ── Claude fallback ────────────────────────────────────────────────────────
@@ -174,14 +182,13 @@ export async function POST(req: NextRequest) {
       companies.map(async (company) => {
         const results = (allResults ?? []).filter((r) => r.company_id === company.id)
         const title = `${company.name} — ${monthName} ${year}`
-
-        const htmlContent = await generateHtmlForCompany(company, results, monthName, year, start_date, end_date)
         const now = new Date().toISOString()
 
-        // If a summary already exists for this company + month + year, update it
-        // in place; otherwise insert a new one. (Explicit lookup so this works
-        // even without a DB unique constraint on those columns.)
-        // Tolerant of pre-existing duplicates: take the most recent match.
+        // Reserve the row *before* generating, so its id can travel with the
+        // request — the downstream workflow writes the finished report back
+        // against it. One summary per company + month + year: reuse the
+        // existing row when there is one, tolerating pre-existing duplicates
+        // by taking the most recent.
         const { data: matches } = await supabase
           .from('summary_documents')
           .select('id')
@@ -190,42 +197,60 @@ export async function POST(req: NextRequest) {
           .eq('year', year)
           .order('updated_at', { ascending: false })
           .limit(1)
-        const existing = matches?.[0]
 
-        let doc: { id: string; title: string }
-        if (existing) {
-          const { data, error } = await supabase
-            .from('summary_documents')
-            .update({
-              company_name: company.name,
-              title,
-              html_content: htmlContent,
-              status: 'draft',
-              updated_at: now,
-            })
-            .eq('id', existing.id)
-            .select('id, title')
-            .single()
-          if (error) throw error
-          doc = data
-        } else {
+        let documentId = matches?.[0]?.id as string | undefined
+        const reserved = !documentId
+        if (!documentId) {
           const { data, error } = await supabase
             .from('summary_documents')
             .insert({
               company_id:   company.id,
               company_name: company.name,
               title,
-              html_content: htmlContent,
+              html_content: '',
               month:        monthName,
               year,
               status: 'draft',
               updated_at: now,
             })
-            .select('id, title')
+            .select('id')
             .single()
           if (error) throw error
-          doc = data
+          documentId = data.id
         }
+
+        let htmlContent: string | null
+        try {
+          htmlContent = await generateHtmlForCompany(
+            company, results, monthName, year, start_date, end_date, documentId!
+          )
+        } catch (err) {
+          // Don't leave an empty placeholder behind for a report that never
+          // generated — but never delete a row that already had content.
+          if (reserved) {
+            await supabase.from('summary_documents').delete().eq('id', documentId!)
+          }
+          throw err
+        }
+
+        const update: Record<string, unknown> = {
+          company_name: company.name,
+          title,
+          status: 'draft',
+          updated_at: new Date().toISOString(),
+        }
+        // Only write the body when we produced it ourselves. When the external
+        // workflow owns the row, it has already stored `html_content` — writing
+        // it again here would race that.
+        if (htmlContent !== null) update.html_content = htmlContent
+
+        const { data: doc, error } = await supabase
+          .from('summary_documents')
+          .update(update)
+          .eq('id', documentId!)
+          .select('id, title')
+          .single()
+        if (error) throw error
 
         return { id: doc.id, title: doc.title, companyId: company.id, companyName: company.name }
       })

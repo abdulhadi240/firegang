@@ -49,6 +49,12 @@ export interface SummaryDocument {
   teamwork_ref: string | null
   created_at: string
   updated_at: string
+  /**
+   * Derived, not a column: the row was reserved but its body hasn't been
+   * written yet — the generation workflow is still running. Computed
+   * server-side so list views never have to ship `html_content`.
+   */
+  is_generating?: boolean
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'disapproved'
@@ -191,7 +197,15 @@ export interface ReconcileSummary {
   ineligible?: number
 }
 
-export type ReconciliationStatus = 'draft' | 'verified' | 'submitted'
+export type ReconciliationStatus = 'draft' | 'verified' | 'submitted' | 'audited'
+
+/**
+ * Sent for auditing and no longer editable. `audited` is the terminal state,
+ * reached once the report document exists — from there the summary flow owns it.
+ */
+export function isReconciliationLocked(status: ReconciliationStatus | string): boolean {
+  return status === 'submitted' || status === 'audited'
+}
 
 // Standalone flow: the practice it runs for is not in the companies table, so a
 // reconciliation is keyed by month + year alone.
@@ -206,6 +220,17 @@ export interface GhlReconciliation {
   webhook_ref: string | null
   /** The audit sheet n8n produced for this month, returned by the verify webhook. */
   google_sheet_url: string | null
+  /** The admin's sign-off on that sheet. Approving sends it back out to n8n. */
+  sheet_approval_status: ApprovalStatus
+  sheet_approval_decided_at: string | null
+  /** The report HTML n8n writes back once the sheet is approved. */
+  teamwork_document: string | null
+  /**
+   * The `summary_documents` row `teamwork_document` was promoted into. The admin
+   * reviews, approves and publishes it through the normal summary flow, so this
+   * is only the pointer to it.
+   */
+  summary_document_id: string | null
   created_at: string
   updated_at: string
 }

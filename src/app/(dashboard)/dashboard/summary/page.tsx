@@ -27,11 +27,18 @@ export default async function SummaryPage({
       .order('name', { ascending: true }),
     supabase
       .from('summary_documents')
-      .select('id, title, company_id, company_name, month, year, status, approval_status, teamwork_inserted_at, teamwork_ref, created_at, updated_at')
+      .select('id, title, company_id, company_name, month, year, status, approval_status, teamwork_inserted_at, teamwork_ref, created_at, updated_at, html_content')
       .eq('month', monthName)
       .eq('year', year)
       .order('company_name', { ascending: true }),
   ])
+
+  // A reserved row with no body yet means the generation workflow is still
+  // running. Reduce that to a flag here so the client never receives the HTML.
+  const monthDocuments = (monthDocs ?? []).map(({ html_content, ...doc }) => ({
+    ...doc,
+    is_generating: !html_content?.trim(),
+  })) as SummaryDocument[]
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -43,7 +50,7 @@ export default async function SummaryPage({
       </div>
       <SummaryClient
         companies={companies ?? []}
-        monthDocuments={(monthDocs ?? []) as SummaryDocument[]}
+        monthDocuments={monthDocuments}
         month={monthName}
         year={year}
       />

@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   // month order below.
   let query = supabase
     .from('summary_documents')
-    .select('id, title, company_id, company_name, month, year, status, approval_status, teamwork_inserted_at, teamwork_ref, created_at, updated_at')
+    .select('id, title, company_id, company_name, month, year, status, approval_status, teamwork_inserted_at, teamwork_ref, created_at, updated_at, html_content')
     .order('year',  { ascending: false })
     .order('created_at', { ascending: false })
     .limit(100)
@@ -22,7 +22,14 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const documents = ((data ?? []) as SummaryDocument[]).sort((a, b) => {
+  // A reserved row with no body yet means generation is still running. Reduce
+  // that to a flag so the response never carries the HTML of every summary.
+  const rows = (data ?? []).map(({ html_content, ...doc }) => ({
+    ...doc,
+    is_generating: !html_content?.trim(),
+  })) as SummaryDocument[]
+
+  const documents = rows.sort((a, b) => {
     if (a.year !== b.year) return b.year - a.year
     const byMonth = MONTH_NAMES.indexOf(b.month) - MONTH_NAMES.indexOf(a.month)
     if (byMonth !== 0) return byMonth
