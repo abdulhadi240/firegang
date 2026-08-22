@@ -20,11 +20,18 @@ import {
   isReconciliationLocked,
   ApprovalStatus,
 } from '@/types'
+import {
+  RECORDING_ACCEPT,
+  RECORDING_MAX_BYTES,
+  formatBytes,
+  isUploadedRecording,
+  recordingFileError,
+} from '@/lib/recordings'
 import { cn } from '@/lib/utils'
 import {
   Loader2, X, Check, AlertTriangle, ChevronLeft, Plus, Trash2, Link2, Send,
   Search, EyeOff, Eye, CheckCircle2, Pencil, PhoneMissed, FileSpreadsheet,
-  ExternalLink, Ban, FileText, ChevronRight, RefreshCw,
+  ExternalLink, Ban, FileText, ChevronRight, RefreshCw, UploadCloud,
 } from 'lucide-react'
 
 interface Props {
@@ -99,15 +106,298 @@ function SourcePill({ source }: { source: RowSource }) {
   )
 }
 
+// ── Recording ────────────────────────────────────────────────────────────────
+
+/**
+ * PUT straight to the signed URL instead of going through supabase-js, so the
+ * upload can report progress — a call recording is big enough that a silent
+ * spinner reads as a hang. The request shape is what Storage expects for a
+ * signed upload: multipart, with the file under an empty field name.
+ */
+function putToSignedUrl(signedUrl: string, file: File, onProgress: (pct: number) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const form = new FormData()
+    form.append('cacheControl', '3600')
+    form.append('', file)
+
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', signedUrl)
+    xhr.setRequestHeader('x-upsert', 'true')
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve()
+      let message = `Upload failed (${xhr.status})`
+      try {
+        const parsed = JSON.parse(xhr.responseText)
+        if (parsed?.message) message = parsed.message
+      } catch { /* not JSON — the status code is all we have */ }
+      reject(new Error(message))
+    }
+    xhr.onerror = () => reject(new Error('Upload failed — check your connection'))
+    xhr.send(form)
+  })
+}
+
+/**
+ * The two ways to give a call a recording: paste the URL, or upload the file.
+ * An upload goes straight to Supabase Storage and comes back as a public URL,
+ * so either route ends with the same thing in the row's `Recording` column.
+ */
+function RecordingField({
+  reconciliationId,
+  value,
+  onChange,
+  missedCall,
+  disabled,
+}: {
+  reconciliationId: string
+  value: string
+  onChange: (url: string) => void
+  missedCall: boolean
+  disabled?: boolean
+}) {
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress]   = useState(0)
+  const [error, setError]         = useState('')
+  const [dragging, setDragging]   = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const uploaded = !!value.trim() && isUploadedRecording(value)
+
+  /** Best effort: the row is what matters, a leftover file is only clutter. */
+  function discard(url: string) {
+    void fetch(
+      `/api/ghl/reconciliations/${reconciliationId}/recording?url=${encodeURIComponent(url)}`,
+      { method: 'DELETE' }
+    ).catch(() => {})
+  }
+
+  async function upload(file: File | null | undefined) {
+    if (!file || disabled) return
+    setError('')
+
+    const invalid = recordingFileError(file)
+    if (invalid) { setError(invalid); return }
+
+    setUploading(true)
+    setProgress(0)
+    try {
+      const res = await fetch(`/api/ghl/reconciliations/${reconciliationId}/recording`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, contentType: file.type, size: file.size }),
+      })
+      const payload = await res.json()
+      if (!res.ok) throw new Error(payload.error ?? 'Could not start the upload')
+
+      await putToSignedUrl(payload.signedUrl, file, setProgress)
+
+      // Replacing a file we host would otherwise strand the old one.
+      const previous = value.trim()
+      if (previous && isUploadedRecording(previous)) discard(previous)
+
+      onChange(payload.publicUrl as string)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+      // Let the same file be picked again after a failure.
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  function clear() {
+    const previous = value.trim()
+    if (previous && isUploadedRecording(previous)) discard(previous)
+    onChange('')
+    setError('')
+  }
+
+  return (
+    <div>
+      <div className="flex gap-2">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled || uploading}
+          placeholder={missedCall ? 'No recording — missed call' : 'Paste a recording URL…'}
+          className="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#E8431A]/30 focus:border-[#E8431A] disabled:bg-gray-50"
+        />
+        {!!value.trim() && !uploading && (
+          <button
+            type="button"
+            onClick={clear}
+            disabled={disabled}
+            title={uploaded ? 'Remove the uploaded file' : 'Clear the URL'}
+            className="w-9 h-9 shrink-0 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 transition-colors disabled:opacity-40"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Upload, for when there is a file rather than a link ────────────────── */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); if (!disabled && !uploading) setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragging(false)
+          if (!uploading) void upload(e.dataTransfer.files?.[0])
+        }}
+        className={cn(
+          'mt-2 rounded-xl border border-dashed px-3 py-3 transition-colors',
+          dragging ? 'border-[#E8431A] bg-orange-50' : 'border-gray-200 bg-gray-50/60',
+          (disabled || uploading) && 'opacity-90'
+        )}
+      >
+        {uploading ? (
+          <div>
+            <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5">
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#E8431A]" />
+                Uploading to storage…
+              </span>
+              <span className="tabular-nums text-gray-400">{progress}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
+              <div
+                className="h-full bg-[#E8431A] transition-[width] duration-200"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] text-gray-500 leading-snug min-w-0">
+              Or drop the recording here — MP4, M4A, MP3, WAV, WebM or OGG, up to{' '}
+              {formatBytes(RECORDING_MAX_BYTES)}. It uploads to storage and fills in
+              the URL above.
+            </p>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              disabled={disabled}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-gray-200 text-gray-700 hover:border-orange-200 hover:text-[#E8431A] transition-colors disabled:opacity-40"
+            >
+              <UploadCloud className="w-3.5 h-3.5" /> Upload file
+            </button>
+          </div>
+        )}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept={RECORDING_ACCEPT}
+        className="hidden"
+        onChange={(e) => void upload(e.target.files?.[0])}
+      />
+
+      {error && (
+        <p className="mt-1.5 text-xs text-red-600 flex items-start gap-1">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" /> {error}
+        </p>
+      )}
+      {uploaded && !uploading && !error && (
+        <p className="mt-1.5 text-xs text-green-600 flex items-center gap-1">
+          <Check className="w-3.5 h-3.5" /> Uploaded ·{' '}
+          <a href={value} target="_blank" rel="noopener noreferrer" className="underline">
+            play it
+          </a>
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The quick way in from the grid: one call, one recording, nothing else to
+ * think about. The full row editor is still there for everything else.
+ */
+function RecordingDialog({
+  row,
+  reconciliationId,
+  saving,
+  onClose,
+  onSave,
+}: {
+  row: GhlReconciliationRow
+  reconciliationId: string
+  saving: boolean
+  onClose: () => void
+  onSave: (url: string) => void
+}) {
+  const [url, setUrl] = useState(row.data[OUR_RECORDING_COLUMN] ?? '')
+  const missed = isMissedCall(row)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg flex flex-col max-h-[90vh] animate-scale-in">
+
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="min-w-0">
+            <p className="font-semibold text-gray-900 text-sm">Add a recording</p>
+            <p className="text-xs text-gray-400 mt-0.5 truncate">
+              {[row.data['Contact name'], row.data['Contact phone'], row.data['Date & time']]
+                .filter(Boolean)
+                .join(' · ') || 'This call'}
+            </p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          <p className="text-xs text-gray-500 mb-3">
+            {missed
+              ? 'This call is already eligible as a missed call — a recording is optional.'
+              : 'Without a recording this call is held back from the audit. Paste its URL, or upload the file.'}
+          </p>
+          <RecordingField
+            reconciliationId={reconciliationId}
+            value={url}
+            onChange={setUrl}
+            missedCall={missed}
+          />
+        </div>
+
+        <div className="px-5 py-4 border-t border-gray-100 shrink-0 flex gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(url)}
+            disabled={saving}
+            className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-sm bg-[#E8431A] text-white hover:bg-[#D03A14] disabled:opacity-50 transition-colors"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            Save recording
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Row editor ───────────────────────────────────────────────────────────────
 
 function RowEditor({
   row,
+  reconciliationId,
   onClose,
   onSave,
   saving,
 }: {
   row: GhlReconciliationRow | 'new'
+  reconciliationId: string
   onClose: () => void
   onSave: (data: Record<string, string>) => void
   saving: boolean
@@ -135,8 +425,8 @@ function RowEditor({
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
               {isNew
-                ? 'Enter the call details and its recording URL'
-                : 'Correct any field, or paste in the missing recording URL'}
+                ? 'Enter the call details, then link or upload its recording'
+                : 'Correct any field, or supply the missing recording'}
             </p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">
@@ -200,15 +490,23 @@ function RowEditor({
                       </span>
                     )}
                   </label>
-                  <input
-                    value={data[col]}
-                    onChange={(e) => setData((d) => ({ ...d, [col]: e.target.value }))}
-                    placeholder={isRecording ? (missedCall ? 'No recording — missed call' : 'https://…') : ''}
-                    className={cn(
-                      'w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-[#E8431A]/30 focus:border-[#E8431A]',
-                      isMatchKey ? 'border-orange-200' : 'border-gray-200'
-                    )}
-                  />
+                  {isRecording ? (
+                    <RecordingField
+                      reconciliationId={reconciliationId}
+                      value={data[col]}
+                      onChange={(url) => setData((d) => ({ ...d, [col]: url }))}
+                      missedCall={missedCall}
+                    />
+                  ) : (
+                    <input
+                      value={data[col]}
+                      onChange={(e) => setData((d) => ({ ...d, [col]: e.target.value }))}
+                      className={cn(
+                        'w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-[#E8431A]/30 focus:border-[#E8431A]',
+                        isMatchKey ? 'border-orange-200' : 'border-gray-200'
+                      )}
+                    />
+                  )}
                 </div>
               )
             })}
@@ -246,6 +544,9 @@ export function ReconciliationClient({ practiceName, reconciliation, initialRows
   const [filter, setFilter] = useState<FilterKey>('all')
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<GhlReconciliationRow | 'new' | null>(null)
+  // The recording-only dialog, reached from the grid — the row editor is more
+  // than is needed when the one missing thing is the recording.
+  const [recordingFor, setRecordingFor] = useState<GhlReconciliationRow | null>(null)
   const [saving, setSaving] = useState(false)
   const [busyRowId, setBusyRowId] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
@@ -329,6 +630,32 @@ export function ReconciliationClient({ practiceName, reconciliation, initialRows
       setRows((prev) => isNew ? [...prev, saved] : prev.map((r) => (r.id === saved.id ? saved : r)))
       setRecon((r) => ({ ...r, status: 'draft' }))
       setEditing(null)
+    } catch (err: unknown) {
+      setBanner({ kind: 'err', text: err instanceof Error ? err.message : 'Save failed' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Write back only the recording, leaving every other cell as it was. An
+  // ineligible row becomes eligible the moment this lands.
+  async function saveRecording(url: string) {
+    if (!recordingFor) return
+    setSaving(true)
+    try {
+      const next = { ...recordingFor.data, [OUR_RECORDING_COLUMN]: url.trim() }
+      const res = await fetch(`/api/ghl/reconciliations/${recon.id}/rows`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rowId: recordingFor.id, data: next }),
+      })
+      const payload = await res.json()
+      if (!res.ok) throw new Error(payload.error ?? 'Save failed')
+
+      const saved = payload.row as GhlReconciliationRow
+      setRows((prev) => prev.map((r) => (r.id === saved.id ? saved : r)))
+      setRecon((r) => ({ ...r, status: 'draft' }))
+      setRecordingFor(null)
     } catch (err: unknown) {
       setBanner({ kind: 'err', text: err instanceof Error ? err.message : 'Save failed' })
     } finally {
@@ -676,10 +1003,18 @@ export function ReconciliationClient({ practiceName, reconciliation, initialRows
                         </a>
                       ) : missed ? (
                         <span className="text-xs text-gray-400">None — missed</span>
-                      ) : (
+                      ) : submitted ? (
                         <span className="inline-flex items-center gap-1 text-xs text-red-500">
                           <AlertTriangle className="w-3 h-3" /> Missing
                         </span>
+                      ) : (
+                        <button
+                          onClick={() => setRecordingFor(row)}
+                          title="Link or upload the recording for this call"
+                          className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-[#E8431A] hover:underline"
+                        >
+                          <AlertTriangle className="w-3 h-3" /> Missing — add
+                        </button>
                       )}
                     </td>
                     <td className="px-4 py-2.5"><EligibilityPill row={row} /></td>
@@ -704,6 +1039,18 @@ export function ReconciliationClient({ practiceName, reconciliation, initialRows
                             )}
                           >
                             <PhoneMissed className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setRecordingFor(row)}
+                            title={recording ? 'Replace the recording' : 'Add or upload a recording'}
+                            className={cn(
+                              'w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
+                              recording
+                                ? 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                                : 'text-gray-400 hover:text-[#E8431A] hover:bg-orange-50'
+                            )}
+                          >
+                            <UploadCloud className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => setEditing(row)}
@@ -1002,9 +1349,20 @@ export function ReconciliationClient({ practiceName, reconciliation, initialRows
       {editing && (
         <RowEditor
           row={editing}
+          reconciliationId={recon.id}
           saving={saving}
           onClose={() => setEditing(null)}
           onSave={saveRow}
+        />
+      )}
+
+      {recordingFor && (
+        <RecordingDialog
+          row={recordingFor}
+          reconciliationId={recon.id}
+          saving={saving}
+          onClose={() => setRecordingFor(null)}
+          onSave={saveRecording}
         />
       )}
     </div>

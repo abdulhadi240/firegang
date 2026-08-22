@@ -1,40 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthenticated } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
-import { MERGED_COLUMNS, RowSource, isReconciliationLocked } from '@/types'
+import { assertEditable, markDraft } from '@/lib/ghl-reconciliation'
+import { MERGED_COLUMNS, RowSource } from '@/types'
 
 // Edits to the review grid: add a missing call by hand, correct a cell, or drop
 // a row. Any edit knocks the reconciliation back to `draft` so a previously
 // verified sheet can't be changed without re-verifying.
 //
 // Rows are never mutated after submission — see the guard in each handler.
-
-async function assertEditable(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  reconciliationId: string
-): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('ghl_reconciliations')
-    .select('status')
-    .eq('id', reconciliationId)
-    .single()
-
-  if (error || !data) return 'Reconciliation not found'
-  if (isReconciliationLocked(data.status)) {
-    return 'This reconciliation has already been submitted and can no longer be edited'
-  }
-  return null
-}
-
-async function markDraft(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  reconciliationId: string
-) {
-  await supabase
-    .from('ghl_reconciliations')
-    .update({ status: 'draft', updated_at: new Date().toISOString() })
-    .eq('id', reconciliationId)
-}
 
 /** Keep only known columns, so a stray key can't be written into the grid. */
 function sanitize(data: Record<string, unknown>): Record<string, string> {
