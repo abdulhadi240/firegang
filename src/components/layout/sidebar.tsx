@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Building2, ClipboardList, LogOut, Menu, X, FlaskConical, BarChart3, PieChart, PhoneCall } from 'lucide-react'
+import { LayoutDashboard, Building2, ClipboardList, LogOut, Menu, X, FlaskConical, BarChart3, PieChart, PhoneCall, GitCompareArrows } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard',             label: 'Dashboard',  icon: LayoutDashboard, exact: true },
@@ -13,6 +13,7 @@ const navItems = [
   { href: '/dashboard/audit-logs',  label: 'Audit Logs', icon: ClipboardList },
   { href: '/dashboard/summary',     label: 'Summary',    icon: PieChart },
   { href: '/dashboard/ghl-calls',   label: 'GHL Calls',  icon: PhoneCall },
+  { href: '/dashboard/comparison',  label: 'Comparison', icon: GitCompareArrows },
 ]
 
 const testingItems = [
@@ -117,7 +118,7 @@ export function Sidebar({ userEmail, userFullName }: SidebarProps) {
   return (
     <>
       {/* ── Mobile top bar ── */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4">
+      <div className="lg:hidden print:hidden fixed top-0 left-0 right-0 z-40 h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4">
         <Image src="/logo.png" alt="Firegang" width={96} height={29} />
         <button
           onClick={() => setOpen(true)}
@@ -156,7 +157,7 @@ export function Sidebar({ userEmail, userFullName }: SidebarProps) {
       )}
 
       {/* ── Desktop sidebar ── */}
-      <aside className="hidden lg:flex w-64 min-h-screen bg-white border-r border-gray-200 flex-col shrink-0">
+      <aside className="hidden lg:flex print:hidden w-64 min-h-screen bg-white border-r border-gray-200 flex-col shrink-0">
         <div className="px-5 py-5 border-b border-gray-200">
           <Image src="/logo.png" alt="Firegang Dental Marketing" width={120} height={36} priority />
           <span className="block text-[10px] text-gray-400 uppercase tracking-widest mt-1.5">
