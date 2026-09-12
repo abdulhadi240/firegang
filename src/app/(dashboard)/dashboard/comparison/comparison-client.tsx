@@ -9,7 +9,7 @@ import {
 } from '@/lib/report-metrics'
 import {
   CalendarDays, Building2, Printer, ArrowUpRight, ArrowDownRight, Minus, Search,
-  ArrowUpDown, ChevronUp, ChevronDown, AlertTriangle, Info, ChevronRight, Trophy,
+  ArrowUpDown, ChevronUp, ChevronDown, AlertTriangle, Info, ChevronRight, Trophy, EyeOff,
 } from 'lucide-react'
 
 type View = 'monthly' | 'practice'
@@ -19,9 +19,19 @@ interface Props {
   initialView: View
   initialCompany: string | null
   initialPeriod: string | null
+  /** Company ids excluded from the all-practices roll-up, from ?exclude=. */
+  initialExcluded: string[]
   /** Rendered on the server so the print header never mismatches on hydration. */
   preparedAt: string
 }
+
+// ── Outlier practices ────────────────────────────────────────────────────────
+// Practices the admin can drop from the all-practices roll-up with one switch.
+// Centro Dental Las Americas reported over a hundred wrong tags in June 2026,
+// enough to move the company-wide accuracy on its own. Matched by name because
+// the practice may be re-created under a new company id.
+const TOGGLEABLE_PRACTICES = ['Centro Dental Las Americas']
+const normalise = (name: string) => name.trim().toLowerCase()
 
 // ── Series colours ───────────────────────────────────────────────────────────
 // Validated with the dataviz palette checker: blue ↔ brand orange clear the
@@ -838,7 +848,7 @@ function Definitions() {
 
 // ── Main component ───────────────────────────────────────────────────────────
 export function ComparisonClient({
-  records, initialView, initialCompany, initialPeriod, preparedAt,
+  records, initialView, initialCompany, initialPeriod, initialExcluded, preparedAt,
 }: Props) {
   const router = useRouter()
 
@@ -868,14 +878,32 @@ export function ComparisonClient({
       : (companies[0]?.id ?? '')
   )
 
+  // The practices that can be switched out of the roll-up, and which are off.
+  const toggleable = useMemo(
+    () => companies.filter((c) => TOGGLEABLE_PRACTICES.some((n) => normalise(n) === normalise(c.name))),
+    [companies]
+  )
+  const [excluded, setExcluded] = useState<Set<string>>(
+    () => new Set(initialExcluded.filter((id) => toggleable.some((c) => c.id === id)))
+  )
+  const toggleExcluded = (id: string) =>
+    setExcluded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const excludedNames = toggleable.filter((c) => excluded.has(c.id)).map((c) => c.name)
+
   // Keep the URL shareable: the owner can be sent a link straight to a view.
   useEffect(() => {
     const q = new URLSearchParams()
     q.set('view', view)
     if (view === 'monthly') q.set('month', period)
     else if (companyId) q.set('company', companyId)
+    if (excluded.size) q.set('exclude', Array.from(excluded).join(','))
     router.replace(`/dashboard/comparison?${q.toString()}`, { scroll: false })
-  }, [view, period, companyId, router])
+  }, [view, period, companyId, excluded, router])
 
   const company = companies.find((c) => c.id === companyId) ?? null
 
@@ -900,7 +928,7 @@ export function ComparisonClient({
             <p className="text-lg font-bold text-gray-900">AI Call Audit — Accuracy Report</p>
             <p className="text-xs text-gray-500">
               {view === 'monthly'
-                ? `All practices · ${periods.map(periodLabel).join(' · ')}`
+                ? `All practices${excludedNames.length ? ` excluding ${excludedNames.join(', ')}` : ''} · ${periods.map(periodLabel).join(' · ')}`
                 : `${company?.name ?? ''} · ${company ? company.periods.map(periodLabel).join(' · ') : ''}`}
             </p>
           </div>
@@ -950,6 +978,9 @@ export function ComparisonClient({
           period={period}
           onPeriod={setPeriod}
           onOpenPractice={(id) => { setCompanyId(id); setView('practice') }}
+          toggleable={toggleable}
+          excluded={excluded}
+          onToggleExcluded={toggleExcluded}
         />
       ) : (
         <PracticeView
@@ -991,14 +1022,23 @@ export function ComparisonClient({
 type SortKey = 'name' | 'tagged' | 'audited' | 'accuracy' | 'wrong' | 'notAudited' | 'manual' | 'delta'
 
 function MonthlyView({
-  records, periods, period, onPeriod, onOpenPractice,
+  records: allRecords, periods, period, onPeriod, onOpenPractice, toggleable, excluded, onToggleExcluded,
 }: {
   records: ReportRecord[]
   periods: string[]
   period: string
   onPeriod: (p: string) => void
   onOpenPractice: (companyId: string) => void
+  toggleable: { id: string; name: string; periods: string[] }[]
+  excluded: Set<string>
+  onToggleExcluded: (companyId: string) => void
 }) {
+  // Every figure on this view — callouts, table, charts, breakdown — is built
+  // from this filtered list, so a switched-off practice vanishes everywhere.
+  const records = useMemo(
+    () => (excluded.size ? allRecords.filter((r) => !excluded.has(r.company_id)) : allRecords),
+    [allRecords, excluded]
+  )
   const byPeriod = useMemo(
     () => periods.map((p) => records.filter((r) => r.period === p)),
     [records, periods]
@@ -1024,8 +1064,45 @@ function MonthlyView({
   const bestAcc = bestIndexes(totals.map(accuracyPct), 'high')
   const bestPeriod = bestAcc.size ? periods[Math.max(...bestAcc)] : undefined
 
+  const excludedNames = toggleable.filter((c) => excluded.has(c.id)).map((c) => c.name)
+
   return (
     <div className="space-y-6">
+      {toggleable.length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm px-4 sm:px-5 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider print:hidden">Include in totals</p>
+          {toggleable.map((c) => {
+            const on = !excluded.has(c.id)
+            return (
+              <label key={c.id} className="inline-flex items-center gap-2.5 text-sm text-gray-800 cursor-pointer select-none print:hidden">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={on}
+                  onClick={() => onToggleExcluded(c.id)}
+                  className={cn(
+                    'relative w-10 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E8431A]/40',
+                    on ? 'bg-[#E8431A]' : 'bg-gray-300'
+                  )}
+                >
+                  <span className={cn('absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform', on && 'translate-x-4')} />
+                </button>
+                <span>
+                  {c.name}
+                  <span className="text-xs text-gray-400 ml-1.5">{on ? 'included' : 'excluded'}</span>
+                </span>
+              </label>
+            )
+          })}
+          {excludedNames.length > 0 && (
+            <p className="inline-flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 ml-auto">
+              <EyeOff className="w-3.5 h-3.5" />
+              {excludedNames.join(', ')} left out of every figure on this page
+            </p>
+          )}
+        </div>
+      )}
+
       <BestMonthCallout columns={columns} metrics={totals} />
 
       {/* The comparison table */}

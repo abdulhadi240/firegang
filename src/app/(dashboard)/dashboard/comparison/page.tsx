@@ -8,7 +8,7 @@ import { ComparisonClient } from './comparison-client'
 export default async function ComparisonPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; company?: string; month?: string }>
+  searchParams: Promise<{ view?: string; company?: string; month?: string; exclude?: string }>
 }) {
   const supabase = await createClient()
   const sp = await searchParams
@@ -39,6 +39,7 @@ export default async function ComparisonPage({
       initialView={sp.view === 'practice' ? 'practice' : 'monthly'}
       initialCompany={sp.company ?? null}
       initialPeriod={sp.month ?? null}
+      initialExcluded={sp.exclude ? sp.exclude.split(',').filter(Boolean) : []}
       preparedAt={new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
     />
   )
