@@ -32,6 +32,24 @@ export function ghlCompanyId(): string {
 }
 
 /**
+ * Whether a `summary_documents` row with this id actually exists. A stored
+ * pointer can dangle — n8n once answered the approval webhook with an id that
+ * never became a row — and following one lands the admin on a 404.
+ */
+export async function summaryDocumentExists(
+  supabase: Supabase,
+  id: string | null | undefined
+): Promise<boolean> {
+  if (!id) return false
+  const { data } = await supabase
+    .from('summary_documents')
+    .select('id')
+    .eq('id', id)
+    .maybeSingle()
+  return Boolean(data)
+}
+
+/**
  * Find the summary document for a reconciliation's month, creating it from
  * `teamwork_document` when n8n has written the report but nothing has promoted
  * it yet. Returns null while there's still nothing to show.

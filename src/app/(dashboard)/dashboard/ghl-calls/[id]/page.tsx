@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { GhlReconciliation, GhlReconciliationRow } from '@/types'
 import { ReconciliationClient } from './reconciliation-client'
-import { ensureSummaryDocument } from '@/lib/ghl-document'
+import { ensureSummaryDocument, summaryDocumentExists } from '@/lib/ghl-document'
 
 const PRACTICE_NAME = process.env.GHL_PRACTICE_NAME ?? 'Gillespie Dentistry'
 
@@ -31,7 +31,12 @@ export default async function ReconciliationPage({
   // n8n writes the approved month's report into `teamwork_document`. Promote it
   // into a summary document so the hand-off link is never a dead end — the
   // admin reviews and publishes it through the normal summary flow from there.
-  if (recon.sheet_approval_status === 'approved' && !recon.summary_document_id) {
+  // A pointer that doesn't resolve to a row counts as missing, so a bad id
+  // recorded at approval time heals here instead of linking to a 404.
+  if (
+    recon.sheet_approval_status === 'approved' &&
+    !(await summaryDocumentExists(supabase, recon.summary_document_id))
+  ) {
     recon.summary_document_id = await ensureSummaryDocument(supabase, recon)
   }
 

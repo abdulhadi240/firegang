@@ -3,7 +3,7 @@ import { isAuthenticated } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { ApprovalStatus } from '@/types'
 import { pickString } from '@/lib/n8n'
-import { ensureSummaryDocument } from '@/lib/ghl-document'
+import { ensureSummaryDocument, summaryDocumentExists } from '@/lib/ghl-document'
 
 // Where an approved sheet goes next. Overridable per-environment, but defaulted
 // so the flow works without extra configuration.
@@ -102,6 +102,16 @@ export async function POST(
         { status: 502 }
       )
     }
+  }
+
+  // Only keep an echoed id that is really a `summary_documents` row. n8n has
+  // answered with ids from elsewhere in its workflow, and storing one of those
+  // sends the admin to a 404 instead of the report.
+  if (summaryDocumentId && !(await summaryDocumentExists(supabase, summaryDocumentId))) {
+    console.warn(
+      `[ghl/sheet-approval] n8n returned ${summaryDocumentId}, which is not a summary document; promoting teamwork_document instead`
+    )
+    summaryDocumentId = null
   }
 
   // n8n usually writes the report into `teamwork_document` rather than echoing
