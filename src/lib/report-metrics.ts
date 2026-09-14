@@ -252,3 +252,41 @@ export function accuracyPct(m: AiFields): number | null {
 export function hasFullAiBreakdown(m: ReportMetrics): boolean {
   return m.ai_accurate != null && m.not_audited_by_ai != null && m.wrong_tagged_by_ai != null
 }
+
+// ── Aggregation ──────────────────────────────────────────────────────────────
+// Rolls many practice reports up into one ReportMetrics-shaped total, so the
+// same metric rows render for "all practices in June" and "this practice in
+// June". A field is summed over the reports that carry it and stays `null`
+// when none do, so "not reported" is never shown as 0.
+const NUMERIC_KEYS = [
+  'manually_audited', 'not_audited_by_ai', 'wrong_tagged_by_ai', 'ai_accurate', 'ai_total',
+  'total_tagged_calls', 'total_local_calls',
+  'np_scheduled', 'np_not_scheduled', 'np_not_scheduled_insurance',
+  'missed_total', 'missed_office_hours', 'missed_after_hours',
+  'src_facebook_ad', 'src_organic', 'src_ppc', 'src_number_pool', 'src_google_ad_extension',
+  'src_ads_location_extension', 'src_social_media_number',
+  'wrong_number_calls', 'form_submissions', 'form_google', 'form_facebook', 'form_website',
+] as const satisfies readonly (keyof ReportMetrics)[]
+
+export function aggregateMetrics(records: ReportRecord[]): ReportMetrics {
+  const out = {} as Record<(typeof NUMERIC_KEYS)[number], number | null>
+  for (const key of NUMERIC_KEYS) {
+    let sum: number | null = null
+    for (const r of records) {
+      const v = r.metrics[key]
+      if (v != null) sum = (sum ?? 0) + v
+    }
+    out[key] = sum
+  }
+  // The three inputs to the accuracy formula must come from the same reports,
+  // otherwise a report that gives a total but no split skews the fraction.
+  // So the rolled-up total / wrong / not-audited only count reports carrying
+  // all three; the plain "AI accurate" count still sums whatever is reported.
+  const full = records.filter((r) => hasFullAiBreakdown(r.metrics))
+  const sumOf = (key: 'ai_total' | 'wrong_tagged_by_ai' | 'not_audited_by_ai') =>
+    full.length ? full.reduce((s, r) => s + (r.metrics[key] ?? 0), 0) : null
+  out.ai_total           = sumOf('ai_total')
+  out.wrong_tagged_by_ai = sumOf('wrong_tagged_by_ai')
+  out.not_audited_by_ai  = sumOf('not_audited_by_ai')
+  return { ...out, np_not_scheduled_reasons: [], auditor: null }
+}
