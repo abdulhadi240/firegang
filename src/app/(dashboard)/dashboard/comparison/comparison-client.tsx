@@ -2,10 +2,11 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
-  ReportRecord, ReportMetrics, accuracyPct, wrongTagRate, aiAuditedCalls, hasFullAiBreakdown, periodLabel, periodShort,
+  ReportRecord, ReportMetrics, accuracyPct, wrongTagRate, notAuditedRate, aiAuditedCalls, hasFullAiBreakdown, periodLabel, periodShort,
   aggregateMetrics,
 } from '@/lib/report-metrics'
 import {
@@ -13,7 +14,7 @@ import {
 } from '@/components/charts/audit-charts'
 import {
   CalendarDays, Building2, Printer, Search,
-  ArrowUpDown, ChevronUp, ChevronDown, AlertTriangle, Info, ChevronRight, Trophy, EyeOff,
+  ArrowUpDown, ChevronUp, ChevronDown, AlertTriangle, Info, ChevronRight, Trophy, EyeOff, Settings,
 } from 'lucide-react'
 
 type View = 'monthly' | 'practice'
@@ -23,19 +24,14 @@ interface Props {
   initialView: View
   initialCompany: string | null
   initialPeriod: string | null
-  /** Company ids excluded from the all-practices roll-up, from ?exclude=. */
-  initialExcluded: string[]
+  /**
+   * Practices switched out of the all-practices roll-up on the Settings page.
+   * Resolved server-side against the ids on the reports (see page.tsx).
+   */
+  excluded: { id: string; name: string }[]
   /** Rendered on the server so the print header never mismatches on hydration. */
   preparedAt: string
 }
-
-// ── Outlier practices ────────────────────────────────────────────────────────
-// Practices the admin can drop from the all-practices roll-up with one switch.
-// Centro Dental Las Americas reported over a hundred wrong tags in June 2026,
-// enough to move the company-wide accuracy on its own. Matched by name because
-// the practice may be re-created under a new company id.
-const TOGGLEABLE_PRACTICES = ['Centro Dental Las Americas']
-const normalise = (name: string) => name.trim().toLowerCase()
 
 /** Reported split adds up to the reported total — flags typos in the source report. */
 function isConsistent(m: ReportMetrics): boolean {
@@ -61,6 +57,7 @@ const SECTIONS: MetricSection[] = [
     rows: [
       { label: 'Total tagged calls',  get: (m) => m.ai_total, emphasis: true, hint: 'Calls tagged this month' },
       { label: 'Not audited by AI',   get: (m) => m.not_audited_by_ai, best: 'low', hint: 'Calls the AI skipped; audited by hand' },
+      { label: 'Not-audited rate',    get: (m) => notAuditedRate(m), format: 'pct', best: 'low', hint: 'Not audited by AI ÷ total tagged' },
       { label: 'AI-audited calls',    get: (m) => aiAuditedCalls(m), hint: 'Total tagged − not audited by AI' },
       { label: 'Wrong tagged by AI',  get: (m) => m.wrong_tagged_by_ai, best: 'low', hint: 'Tags a team member had to correct' },
       { label: 'Wrong-tag rate',      get: (m) => wrongTagRate(m), format: 'pct', best: 'low', hint: 'Wrong tagged ÷ AI-audited calls' },
@@ -349,6 +346,7 @@ function Definitions() {
   const rows = [
     ['Total tagged calls', 'Calls tagged for the month (the "of N" in the report).'],
     ['Not audited by AI', 'Calls the AI did not audit at all, so a team member audited them by hand.'],
+    ['Not-audited rate', 'Not audited by AI ÷ total tagged calls — the share of the month the AI never covered.'],
     ['AI-audited calls', 'Total tagged calls minus the calls not audited by AI — the calls the AI is judged on.'],
     ['Wrong tagged by AI', 'Calls the AI tagged incorrectly and a team member re-tagged.'],
     ['Wrong-tag rate', 'Wrong tagged by AI ÷ AI-audited calls.'],
@@ -370,7 +368,7 @@ function Definitions() {
 
 // ── Main component ───────────────────────────────────────────────────────────
 export function ComparisonClient({
-  records, initialView, initialCompany, initialPeriod, initialExcluded, preparedAt,
+  records, initialView, initialCompany, initialPeriod, excluded, preparedAt,
 }: Props) {
   const router = useRouter()
 
@@ -400,22 +398,7 @@ export function ComparisonClient({
       : (companies[0]?.id ?? '')
   )
 
-  // The practices that can be switched out of the roll-up, and which are off.
-  const toggleable = useMemo(
-    () => companies.filter((c) => TOGGLEABLE_PRACTICES.some((n) => normalise(n) === normalise(c.name))),
-    [companies]
-  )
-  const [excluded, setExcluded] = useState<Set<string>>(
-    () => new Set(initialExcluded.filter((id) => toggleable.some((c) => c.id === id)))
-  )
-  const toggleExcluded = (id: string) =>
-    setExcluded((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  const excludedNames = toggleable.filter((c) => excluded.has(c.id)).map((c) => c.name)
+  const excludedNames = excluded.map((c) => c.name)
 
   // Keep the URL shareable: the owner can be sent a link straight to a view.
   useEffect(() => {
@@ -423,9 +406,8 @@ export function ComparisonClient({
     q.set('view', view)
     if (view === 'monthly') q.set('month', period)
     else if (companyId) q.set('company', companyId)
-    if (excluded.size) q.set('exclude', Array.from(excluded).join(','))
     router.replace(`/dashboard/comparison?${q.toString()}`, { scroll: false })
-  }, [view, period, companyId, excluded, router])
+  }, [view, period, companyId, router])
 
   const company = companies.find((c) => c.id === companyId) ?? null
 
@@ -500,9 +482,7 @@ export function ComparisonClient({
           period={period}
           onPeriod={setPeriod}
           onOpenPractice={(id) => { setCompanyId(id); setView('practice') }}
-          toggleable={toggleable}
           excluded={excluded}
-          onToggleExcluded={toggleExcluded}
         />
       ) : (
         <PracticeView
@@ -541,26 +521,26 @@ export function ComparisonClient({
 // ── Monthly overview ─────────────────────────────────────────────────────────
 // One column per month, all practices rolled up. The practice-level breakdown
 // for a chosen month sits underneath as the drill-down.
-type SortKey = 'name' | 'tagged' | 'audited' | 'accuracy' | 'wrong' | 'notAudited' | 'manual' | 'delta'
+type SortKey = 'name' | 'tagged' | 'audited' | 'accuracy' | 'wrong' | 'notAudited' | 'notAuditedRate' | 'manual' | 'delta'
 
 function MonthlyView({
-  records: allRecords, periods, period, onPeriod, onOpenPractice, toggleable, excluded, onToggleExcluded,
+  records: allRecords, periods, period, onPeriod, onOpenPractice, excluded,
 }: {
   records: ReportRecord[]
   periods: string[]
   period: string
   onPeriod: (p: string) => void
   onOpenPractice: (companyId: string) => void
-  toggleable: { id: string; name: string; periods: string[] }[]
-  excluded: Set<string>
-  onToggleExcluded: (companyId: string) => void
+  /** Practices switched out of the roll-up in Settings. */
+  excluded: { id: string; name: string }[]
 }) {
   // Every figure on this view — callouts, table, charts, breakdown — is built
   // from this filtered list, so a switched-off practice vanishes everywhere.
-  const records = useMemo(
-    () => (excluded.size ? allRecords.filter((r) => !excluded.has(r.company_id)) : allRecords),
-    [allRecords, excluded]
-  )
+  const records = useMemo(() => {
+    if (excluded.length === 0) return allRecords
+    const ids = new Set(excluded.map((c) => c.id))
+    return allRecords.filter((r) => !ids.has(r.company_id))
+  }, [allRecords, excluded])
   const byPeriod = useMemo(
     () => periods.map((p) => records.filter((r) => r.period === p)),
     [records, periods]
@@ -586,42 +566,22 @@ function MonthlyView({
   const bestAcc = bestIndexes(totals.map(accuracyPct), 'high')
   const bestPeriod = bestAcc.size ? periods[Math.max(...bestAcc)] : undefined
 
-  const excludedNames = toggleable.filter((c) => excluded.has(c.id)).map((c) => c.name)
-
   return (
     <div className="space-y-6">
-      {toggleable.length > 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm px-4 sm:px-5 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider print:hidden">Include in totals</p>
-          {toggleable.map((c) => {
-            const on = !excluded.has(c.id)
-            return (
-              <label key={c.id} className="inline-flex items-center gap-2.5 text-sm text-gray-800 cursor-pointer select-none print:hidden">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={on}
-                  onClick={() => onToggleExcluded(c.id)}
-                  className={cn(
-                    'relative w-10 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E8431A]/40',
-                    on ? 'bg-[#E8431A]' : 'bg-gray-300'
-                  )}
-                >
-                  <span className={cn('absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform', on && 'translate-x-4')} />
-                </button>
-                <span>
-                  {c.name}
-                  <span className="text-xs text-gray-400 ml-1.5">{on ? 'included' : 'excluded'}</span>
-                </span>
-              </label>
-            )
-          })}
-          {excludedNames.length > 0 && (
-            <p className="inline-flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 ml-auto">
-              <EyeOff className="w-3.5 h-3.5" />
-              {excludedNames.join(', ')} left out of every figure on this page
-            </p>
-          )}
+      {excluded.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 sm:px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-amber-900">
+          <p className="inline-flex items-center gap-2 min-w-0">
+            <EyeOff className="w-4 h-4 shrink-0" />
+            <span>
+              <span className="font-medium">{excluded.map((c) => c.name).join(', ')}</span> left out of every figure on this page
+            </span>
+          </p>
+          <Link
+            href="/dashboard/settings"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-950 ml-auto print:hidden"
+          >
+            <Settings className="w-3.5 h-3.5" /> Change in Settings
+          </Link>
         </div>
       )}
 
@@ -667,6 +627,7 @@ function MonthlyView({
               rows: [
                 ['AI-audited calls', fmt(aiAuditedCalls(t))],
                 ['Wrong tagged', fmt(t.wrong_tagged_by_ai)],
+                ['Not audited by AI', `${fmt(t.not_audited_by_ai)} (${fmtPct(notAuditedRate(t))})`],
                 ['Practices', String(byPeriod[i].length)],
               ],
             }))}
@@ -728,6 +689,7 @@ function PracticeBreakdown({
           accuracy,
           wrong: m.wrong_tagged_by_ai,
           notAudited: m.not_audited_by_ai,
+          notAuditedRate: notAuditedRate(m),
           manual: m.manually_audited,
           prevAccuracy,
           delta: accuracy != null && prevAccuracy != null ? accuracy - prevAccuracy : null,
@@ -788,6 +750,7 @@ function PracticeBreakdown({
                 ['name', 'Practice', 'text-left'],
                 ['tagged', 'Tagged calls', 'text-right'],
                 ['notAudited', 'Not audited', 'text-right'],
+                ['notAuditedRate', 'Not audited %', 'text-right'],
                 ['audited', 'AI-audited', 'text-right'],
                 ['wrong', 'Wrong tagged', 'text-right'],
                 ['accuracy', 'AI accuracy', 'text-right'],
@@ -810,7 +773,7 @@ function PracticeBreakdown({
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">No practices match.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">No practices match.</td></tr>
             )}
             {rows.map((r) => (
               <tr key={r.id} onClick={() => onOpenPractice(r.id)} className="hover:bg-orange-50/40 cursor-pointer transition-colors">
@@ -828,6 +791,7 @@ function PracticeBreakdown({
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmt(r.tagged)}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmt(r.notAudited)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmtPct(r.notAuditedRate)}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmt(r.audited)}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmt(r.wrong)}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums"><AccuracyCell value={r.accuracy} /></td>
@@ -843,6 +807,7 @@ function PracticeBreakdown({
               <td className="px-4 py-2.5">All practices ({current.length})</td>
               <td className="px-4 py-2.5 text-right tabular-nums">{fmt(total.ai_total)}</td>
               <td className="px-4 py-2.5 text-right tabular-nums">{fmt(total.not_audited_by_ai)}</td>
+              <td className="px-4 py-2.5 text-right tabular-nums">{fmtPct(notAuditedRate(total))}</td>
               <td className="px-4 py-2.5 text-right tabular-nums">{fmt(aiAuditedCalls(total))}</td>
               <td className="px-4 py-2.5 text-right tabular-nums">{fmt(total.wrong_tagged_by_ai)}</td>
               <td className="px-4 py-2.5 text-right tabular-nums">{fmtPct(accuracyPct(total))}</td>
@@ -971,6 +936,7 @@ function PracticeView({
                   rows: [
                     ['AI-audited calls', fmt(aiAuditedCalls(r.metrics))],
                     ['Wrong tagged', fmt(r.metrics.wrong_tagged_by_ai)],
+                    ['Not audited by AI', `${fmt(r.metrics.not_audited_by_ai)} (${fmtPct(notAuditedRate(r.metrics))})`],
                   ],
                 }))}
                 highlight={bestPeriod}

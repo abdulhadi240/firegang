@@ -157,3 +157,28 @@ $$ language plpgsql security definer;
 --   ('Acme Dental', 'active'),
 --   ('Sunrise Smiles', 'active'),
 --   ('City Orthodontics', 'pending');
+
+
+-- ============================================================
+-- COMPARISON EXCLUSIONS
+-- Practices switched out of the all-practices roll-up on the Comparison
+-- page (managed from Dashboard → Settings). See
+-- supabase-comparison-settings-migration.sql for the rationale.
+-- ============================================================
+create table if not exists public.comparison_exclusions (
+  company_id   text primary key,   -- summary_documents.company_id (text, no FK)
+  company_name text not null,
+  created_at   timestamptz not null default now()
+);
+
+alter table public.comparison_exclusions enable row level security;
+
+create policy "Authenticated users can view comparison exclusions"
+  on public.comparison_exclusions for select
+  to authenticated
+  using (true);
+
+create policy "Service role can manage comparison exclusions"
+  on public.comparison_exclusions for all
+  to service_role
+  using (true);

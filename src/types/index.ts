@@ -299,3 +299,11 @@ export const LLM_COSTS: Record<LlmModel, { input: string; output: string }> = {
   'deepseek/deepseek-v4-flash':    { input: '$0.44',  output: '$0.87'  },
   'google/gemini-3-flash-preview': { input: '$0.50',  output: '$3.00'  },
 }
+
+// A practice switched out of the all-practices roll-up on the Comparison
+// page (Dashboard → Settings). Keyed by summary_documents.company_id.
+export interface ComparisonExclusion {
+  company_id: string
+  company_name: string
+  created_at: string
+}

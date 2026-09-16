@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Building2, ClipboardList, LogOut, Menu, X, FlaskConical, BarChart3, PieChart, PhoneCall, GitCompareArrows } from 'lucide-react'
+import { LayoutDashboard, Building2, ClipboardList, LogOut, Menu, X, FlaskConical, BarChart3, PieChart, PhoneCall, GitCompareArrows, Settings } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard',             label: 'Dashboard',  icon: LayoutDashboard, exact: true },
@@ -14,6 +14,7 @@ const navItems = [
   { href: '/dashboard/summary',     label: 'Summary',    icon: PieChart },
   { href: '/dashboard/ghl-calls',   label: 'GHL Calls',  icon: PhoneCall },
   { href: '/dashboard/comparison',  label: 'Comparison', icon: GitCompareArrows },
+  { href: '/dashboard/settings',    label: 'Settings',   icon: Settings },
 ]
 
 const testingItems = [

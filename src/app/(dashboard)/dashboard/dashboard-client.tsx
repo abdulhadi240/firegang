@@ -109,7 +109,7 @@ function MonthList({ months, bestPeriod, onSelect }: { months: MonthPoint[]; bes
               </div>
               <div className="flex items-center justify-between gap-3 mt-1">
                 <span className="text-[11px] text-gray-500 tabular-nums">
-                  {fmt(m.totalCalls)} calls · {m.practices} practices
+                  {fmt(m.totalCalls)} calls · {m.practices} practices · {fmtPct(m.notAuditedRate)} not audited by AI
                 </span>
                 {prev
                   ? <Delta current={m.accuracy} previous={prev.accuracy} unit=" pts" decimals={1} best="high" />
@@ -169,6 +169,7 @@ export function DashboardClient({ overview, activeCompanies, queue }: Props) {
       ['Calls audited', fmt(m.totalCalls)],
       ['AI accurate', fmt(m.accurate)],
       ['Wrong tagged', fmt(m.wrong)],
+      ['Not audited by AI', `${fmt(m.notAudited)} (${fmtPct(m.notAuditedRate)})`],
       ['Practices', String(m.practices)],
     ] as [string, string][],
   }))

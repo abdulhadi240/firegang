@@ -4,7 +4,7 @@
 // report metrics the Comparison page uses, so the two never disagree.
 
 import {
-  ReportRecord, ReportMetrics, aggregateMetrics, accuracyPct, aiAuditedCalls, wrongTagRate,
+  ReportRecord, ReportMetrics, aggregateMetrics, accuracyPct, aiAuditedCalls, wrongTagRate, notAuditedRate,
   hasFullAiBreakdown, periodShort, periodLabel,
 } from '@/lib/report-metrics'
 
@@ -21,6 +21,8 @@ export interface MonthPoint {
   notAudited: number
   accuracy: number | null
   wrongRate: number | null
+  /** Not audited ÷ total tagged, in percent. */
+  notAuditedRate: number | null
 }
 
 export interface PracticeMove {
@@ -53,6 +55,7 @@ export interface AuditOverview {
     accurate: number
     wrong: number
     notAudited: number
+    notAuditedRate: number | null
     accuracy: number | null
     reports: number
     practices: number
@@ -89,6 +92,7 @@ function pointFor(period: string, records: ReportRecord[]): MonthPoint {
     notAudited: m.not_audited_by_ai ?? 0,
     accuracy: accuracyPct(m),
     wrongRate: wrongTagRate(m),
+    notAuditedRate: notAuditedRate(m),
   }
 }
 
@@ -117,6 +121,7 @@ export function buildAuditOverview(records: ReportRecord[]): AuditOverview {
     accurate: Math.max(0, allAudited - allWrong),
     wrong: allWrong,
     notAudited: all.not_audited_by_ai ?? 0,
+    notAuditedRate: notAuditedRate(all),
     accuracy: accuracyPct(all),
     reports: records.length,
     practices: new Set(records.map((r) => r.company_name.toLowerCase())).size,

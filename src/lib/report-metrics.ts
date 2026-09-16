@@ -246,6 +246,17 @@ export function accuracyPct(m: AiFields): number | null {
 }
 
 /**
+ * Share of the month's tagged calls the AI never audited, so a human had to
+ * audit them from scratch: not audited ÷ total tagged. Judged against the
+ * total (not the AI-audited count) because it measures AI coverage, while the
+ * wrong-tag rate measures AI accuracy on the calls it did cover.
+ */
+export function notAuditedRate(m: AiFields): number | null {
+  if (!m.ai_total || m.not_audited_by_ai == null) return null
+  return Math.round((m.not_audited_by_ai / m.ai_total) * 1000) / 10
+}
+
+/**
  * True when the report carries the full AI breakdown. Older reports only give
  * "AI was accurate on X of Y" and skip the not-audited / wrong-tagged split.
  */
