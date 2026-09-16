@@ -5,8 +5,12 @@
 // HTML to text lines first and then read each metric by its label.
 //
 // Older reports (June 2026) sometimes omit the "Call Not Audited by AI" and
-// "Wrong tagged by AI" lines; those fields come back `null` rather than 0 so the
-// comparison page can say "not reported" instead of inventing a number.
+// "Wrong tagged by AI" lines, and some leave the template's "XX" in place. Those
+// fields come back `null` rather than 0 so the comparison page can say "not
+// reported" instead of inventing a number. The one exception is arithmetic the
+// report itself states: total = accurate + wrong + not audited, so when exactly
+// one of those three is blank the other two pin it down. That value is filled
+// in and flagged in `ai_split_derived`.
 
 import { MONTH_NAMES } from '@/types'
 
@@ -22,6 +26,12 @@ export interface ReportMetrics {
   ai_accurate: number | null
   /** The "of 38" in the line above; falls back to Total Tagged Calls. */
   ai_total: number | null
+  /**
+   * Which of accurate / wrong / not-audited the report left blank and we filled
+   * in from the other two (total = accurate + wrong + not audited). Null when
+   * all three were reported as written.
+   */
+  ai_split_derived: 'ai_accurate' | 'wrong_tagged_by_ai' | 'not_audited_by_ai' | null
 
   // ── Volume ─────────────────────────────────────────────────────────
   total_tagged_calls: number | null
@@ -80,7 +90,9 @@ const ENTITIES: Record<string, string> = {
 
 export function htmlToLines(html: string): string[] {
   const text = html
-    .replace(/<br\s*\/?>/gi, '\n')
+    // Every spelling of <br>, including the styled ones a paste leaves behind
+    // (`<br style="…">`) — without this a whole report collapses to one line.
+    .replace(/<br\b[^>]*\/?>/gi, '\n')
     .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, '\n')
     .replace(/<li[^>]*>/gi, '\n* ')
     .replace(/<[^>]+>/g, '')
@@ -141,6 +153,26 @@ export function parseReportMetrics(html: string | null | undefined): ReportMetri
   const total_tagged_calls = num('Total Tagged Calls')
   const ai_total = ai_of ?? total_tagged_calls ?? manual_of
 
+  // The report's own arithmetic: total = accurate + wrong + not audited. When
+  // exactly one of the three is blank ("XX", "X of XX", or mangled like "Wrong
+  // tagged by 01: XX"), the other two determine it, so fill it in rather than
+  // dropping the whole report from the accuracy roll-up. A negative result
+  // means the report contradicts itself; leave the blank alone in that case.
+  let not_audited_by_ai = num('Calls? Not Audited by AI')
+  let wrong_tagged_by_ai = num('Wrong(?:ly)? tagged by AI')
+  let ai_split_derived: ReportMetrics['ai_split_derived'] = null
+  if (ai_total != null) {
+    const blanks = [ai_accurate, wrong_tagged_by_ai, not_audited_by_ai].filter((v) => v == null).length
+    if (blanks === 1) {
+      const rest = ai_total - (ai_accurate ?? 0) - (wrong_tagged_by_ai ?? 0) - (not_audited_by_ai ?? 0)
+      if (rest >= 0) {
+        if (ai_accurate == null)              { ai_accurate = rest;        ai_split_derived = 'ai_accurate' }
+        else if (wrong_tagged_by_ai == null)  { wrong_tagged_by_ai = rest; ai_split_derived = 'wrong_tagged_by_ai' }
+        else                                  { not_audited_by_ai = rest;  ai_split_derived = 'not_audited_by_ai' }
+      }
+    }
+  }
+
   // Reasons: bullet lines ("* …") that follow the "New Patient not Scheduled" heading.
   const reasons: string[] = []
   const headingIdx = lines.findIndex((l) => /^New Patients? not Scheduled\s*:?\s*$/i.test(l))
@@ -162,10 +194,11 @@ export function parseReportMetrics(html: string | null | undefined): ReportMetri
 
   return {
     manually_audited,
-    not_audited_by_ai:  num('Calls? Not Audited by AI'),
-    wrong_tagged_by_ai: num('Wrong(?:ly)? tagged by AI'),
+    not_audited_by_ai,
+    wrong_tagged_by_ai,
     ai_accurate,
     ai_total,
+    ai_split_derived,
 
     total_tagged_calls,
     total_local_calls: num('Total Local Calls'),
@@ -299,5 +332,5 @@ export function aggregateMetrics(records: ReportRecord[]): ReportMetrics {
   out.ai_total           = sumOf('ai_total')
   out.wrong_tagged_by_ai = sumOf('wrong_tagged_by_ai')
   out.not_audited_by_ai  = sumOf('not_audited_by_ai')
-  return { ...out, np_not_scheduled_reasons: [], auditor: null }
+  return { ...out, ai_split_derived: null, np_not_scheduled_reasons: [], auditor: null }
 }

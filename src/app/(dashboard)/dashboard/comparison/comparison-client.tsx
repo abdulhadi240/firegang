@@ -33,6 +33,13 @@ interface Props {
   preparedAt: string
 }
 
+/** Tooltip wording for a figure the parser filled in from the report's other AI lines. */
+const DERIVED_LABEL: Record<NonNullable<ReportMetrics['ai_split_derived']>, string> = {
+  ai_accurate: 'AI accurate count',
+  wrong_tagged_by_ai: 'Wrong tagged',
+  not_audited_by_ai: 'Not audited',
+}
+
 /** Reported split adds up to the reported total — flags typos in the source report. */
 function isConsistent(m: ReportMetrics): boolean {
   if (!hasFullAiBreakdown(m)) return true
@@ -695,6 +702,7 @@ function PracticeBreakdown({
           delta: accuracy != null && prevAccuracy != null ? accuracy - prevAccuracy : null,
           incomplete: !hasFullAiBreakdown(m),
           inconsistent: !isConsistent(m),
+          derived: m.ai_split_derived,
         }
       })
       .sort((a, b) => {
@@ -713,6 +721,10 @@ function PracticeBreakdown({
 
   const total = aggregateMetrics(current)
   const prevTotal = compare ? aggregateMetrics(previous) : null
+  // Reports without the wrong / not-audited split cannot feed the accuracy
+  // formula, so the AI columns of the totals row add up only the rest.
+  const withBreakdown = current.filter((r) => hasFullAiBreakdown(r.metrics)).length
+  const leftOut = current.length - withBreakdown
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -786,6 +798,12 @@ function PracticeBreakdown({
                     {r.inconsistent && (
                       <span title="Reported figures do not add up to the total — check the source report" className="text-amber-500"><AlertTriangle className="w-3.5 h-3.5" /></span>
                     )}
+                    {r.derived && (
+                      <span
+                        title={`${DERIVED_LABEL[r.derived]} was left blank in the report; filled in from the other AI lines (total = accurate + wrong + not audited)`}
+                        className="text-gray-400"
+                      ><Info className="w-3.5 h-3.5" /></span>
+                    )}
                     <ChevronRight className="w-3.5 h-3.5 text-gray-300 print:hidden" />
                   </span>
                 </td>
@@ -804,7 +822,17 @@ function PracticeBreakdown({
           </tbody>
           <tfoot className="bg-gray-50 font-semibold text-gray-900 border-t border-gray-200">
             <tr>
-              <td className="px-4 py-2.5">All practices ({current.length})</td>
+              <td className="px-4 py-2.5">
+                All practices ({current.length})
+                {leftOut > 0 && (
+                  <span
+                    className="block text-[11px] font-normal text-amber-700 whitespace-nowrap"
+                    title="Reports missing the wrong / not-audited split cannot be scored, so the AI columns here add up only the reports that have it"
+                  >
+                    AI columns from {withBreakdown} reports · {leftOut} without a full breakdown left out
+                  </span>
+                )}
+              </td>
               <td className="px-4 py-2.5 text-right tabular-nums">{fmt(total.ai_total)}</td>
               <td className="px-4 py-2.5 text-right tabular-nums">{fmt(total.not_audited_by_ai)}</td>
               <td className="px-4 py-2.5 text-right tabular-nums">{fmtPct(notAuditedRate(total))}</td>
