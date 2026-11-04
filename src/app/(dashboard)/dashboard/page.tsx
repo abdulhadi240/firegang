@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { parseReportMetrics, periodKey, ReportRecord } from '@/lib/report-metrics'
 import { buildAuditOverview } from '@/lib/audit-overview'
+import { fetchWrongTagBreakdown, previousMonth } from '@/lib/callrail'
 import { DashboardClient } from './dashboard-client'
 
 // The home page is a read-out of the monthly audit reports. Every report is
@@ -10,13 +11,15 @@ import { DashboardClient } from './dashboard-client'
 export default async function DashboardPage() {
   const supabase = await createClient()
 
-  const [{ data: docs }, { count: companiesCount }] = await Promise.all([
+  const prev = previousMonth()
+  const [{ data: docs }, { count: companiesCount }, wrongTags] = await Promise.all([
     supabase
       .from('summary_documents')
       .select('id, company_id, company_name, month, year, html_content, approval_status, teamwork_inserted_at')
       .order('year', { ascending: true })
       .order('month', { ascending: true }),
     supabase.from('companies').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+    fetchWrongTagBreakdown(prev.month, prev.year),
   ])
 
   const withBody = (docs ?? []).filter((d) => d.html_content?.trim())
@@ -50,6 +53,7 @@ export default async function DashboardPage() {
       overview={overview}
       activeCompanies={companiesCount ?? 0}
       queue={queue}
+      wrongTags={wrongTags}
     />
   )
 }

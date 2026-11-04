@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { AuditOverview, MonthPoint, PracticeMove, Trend } from '@/lib/audit-overview'
+import type { WrongTagBreakdown } from '@/lib/callrail'
 import {
   SERIES, fmt, fmtPct, Delta, BarRow, StackedBars, AccuracyLine,
 } from '@/components/charts/audit-charts'
@@ -25,6 +26,8 @@ interface Props {
   overview: AuditOverview
   activeCompanies: number
   queue: Queue
+  /** Previous month's "Wrong tagged by AI" calls from CallRail; null when unavailable. */
+  wrongTags: WrongTagBreakdown | null
 }
 
 // ── Trend wording ────────────────────────────────────────────────────────────
@@ -152,8 +155,62 @@ function MoverList({ items, empty }: { items: PracticeMove[]; empty: string }) {
   )
 }
 
+// ── Wrong tags by tag (CallRail, previous month) ─────────────────────────────
+function WrongTagCard({ data }: { data: WrongTagBreakdown }) {
+  const max = Math.max(1, ...data.tags.map((t) => t.count))
+  return (
+    <Card className="mb-6 lg:mb-8">
+      <CardHeader className="pb-2 px-4 sm:px-6">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Wrong tagged by AI, by tag · {data.monthLabel}</CardTitle>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Calls the auditors marked &ldquo;Wrong tagged by AI&rdquo; in CallRail, grouped by the outcome tags on the call. A call can carry more than one tag.
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{fmt(data.total)}</p>
+            <p className="text-[11px] text-gray-500 mt-1">calls · {fmt(data.practices)} practices</p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 sm:px-6 pb-5">
+        {data.tags.length === 0 ? (
+          <p className="text-xs text-gray-400 py-2">
+            {data.total === 0 ? `No calls were marked wrong tagged in ${data.monthLabel}.` : 'None of the wrong-tagged calls carry an outcome tag.'}
+          </p>
+        ) : (
+          <ul className="space-y-2.5">
+            {data.tags.map((t) => (
+              <li key={t.label} className="grid grid-cols-[minmax(0,11rem)_1fr_auto] sm:grid-cols-[14rem_1fr_auto] items-center gap-3">
+                <span className="min-w-0">
+                  <span className="block text-sm text-gray-700 truncate" title={t.label}>{t.label}</span>
+                  {t.languages.length > 0 && (
+                    <span className="block text-[11px] text-gray-500 truncate">
+                      {t.languages.map((l) => `${fmt(l.count)} in ${l.language}`).join(' · ')}
+                    </span>
+                  )}
+                </span>
+                <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-[width] duration-1000 ease-out"
+                    style={{ width: `${(t.count / max) * 100}%`, background: SERIES.wrong.color }}
+                  />
+                </div>
+                <span className="text-sm font-semibold text-gray-900 tabular-nums w-16 text-right">
+                  {fmt(t.count)} <span className="text-[11px] font-normal text-gray-500">{fmtPct(data.total ? (t.count / data.total) * 100 : null)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
-export function DashboardClient({ overview, activeCompanies, queue }: Props) {
+export function DashboardClient({ overview, activeCompanies, queue, wrongTags }: Props) {
   const router = useRouter()
   const { months, latest, previous, totals, trend, improved, slipped, attention } = overview
   const t = TREND[trend.direction]
@@ -261,6 +318,8 @@ export function DashboardClient({ overview, activeCompanies, queue }: Props) {
               }
             />
           </div>
+
+          {wrongTags && <WrongTagCard data={wrongTags} />}
 
           {/* Accuracy trend */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-6 lg:mb-8">
