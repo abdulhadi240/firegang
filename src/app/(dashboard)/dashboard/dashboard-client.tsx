@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { refreshWrongTags } from './actions'
 import { cn } from '@/lib/utils'
 import { AuditOverview, MonthPoint, PracticeMove, Trend } from '@/lib/audit-overview'
 import type { WrongTagBreakdown } from '@/lib/callrail'
@@ -12,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   PhoneCall, ShieldCheck, TriangleAlert, TrendingUp, TrendingDown, MoveRight,
   ArrowRight, Building2, PieChart, GitCompareArrows, FileClock, Send, Sparkles,
-  ArrowUpRight, ArrowDownRight, ClipboardCheck,
+  ArrowUpRight, ArrowDownRight, ClipboardCheck, RefreshCw,
 } from 'lucide-react'
 
 interface Queue {
@@ -156,6 +158,26 @@ function MoverList({ items, empty }: { items: PracticeMove[]; empty: string }) {
 }
 
 // ── Wrong tags by tag (CallRail, previous month) ─────────────────────────────
+function RefreshWrongTagsButton() {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  return (
+    <button
+      type="button"
+      onClick={() => startTransition(async () => {
+        await refreshWrongTags()
+        router.refresh()
+      })}
+      disabled={pending}
+      title="Re-pull the wrong-tag counts from CallRail"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 transition-colors"
+    >
+      <RefreshCw className={cn('w-3.5 h-3.5', pending && 'animate-spin')} />
+      {pending ? 'Refreshing…' : 'Refresh'}
+    </button>
+  )
+}
+
 function WrongTagCard({ data }: { data: WrongTagBreakdown }) {
   const max = Math.max(1, ...data.tags.map((t) => t.count))
   return (
@@ -168,9 +190,12 @@ function WrongTagCard({ data }: { data: WrongTagBreakdown }) {
               Calls the auditors marked &ldquo;Wrong tagged by AI&rdquo; in CallRail, grouped by the outcome tags on the call. A call can carry more than one tag.
             </p>
           </div>
-          <div className="text-right">
-            <p className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{fmt(data.total)}</p>
-            <p className="text-[11px] text-gray-500 mt-1">calls · {fmt(data.practices)} practices</p>
+          <div className="flex items-end gap-3">
+            <RefreshWrongTagsButton />
+            <div className="text-right">
+              <p className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{fmt(data.total)}</p>
+              <p className="text-[11px] text-gray-500 mt-1">calls · {fmt(data.practices)} practices</p>
+            </div>
           </div>
         </div>
       </CardHeader>

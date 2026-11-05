@@ -67,6 +67,9 @@ export function previousMonth(now = new Date()): { month: string; year: number }
   return { month: MONTH_NAMES[d.getUTCMonth()], year: d.getUTCFullYear() }
 }
 
+/** Cache tag on the CallRail fetches, so the dashboard can force a re-pull. */
+export const WRONG_TAGS_CACHE_TAG = 'callrail-wrong-tags'
+
 /**
  * Null when CallRail isn't configured or the request fails, so the dashboard
  * can hide the card instead of showing a misleading zero.
@@ -91,7 +94,7 @@ export async function fetchWrongTagBreakdown(month: string, year: number): Promi
       // without hitting CallRail on every dashboard load.
       const res = await fetch(url, {
         headers: { Authorization: `Token token=${token}` },
-        next: { revalidate: 3600 },
+        next: { revalidate: 3600, tags: [WRONG_TAGS_CACHE_TAG] },
       })
       if (!res.ok) throw new Error(`CallRail ${res.status}`)
       const json = await res.json() as { calls: CallRailCall[]; total_pages: number }
