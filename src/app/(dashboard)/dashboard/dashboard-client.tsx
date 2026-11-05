@@ -165,8 +165,12 @@ function RefreshWrongTagsButton() {
     <button
       type="button"
       onClick={() => startTransition(async () => {
-        await refreshWrongTags()
-        router.refresh()
+        try {
+          await refreshWrongTags()
+          router.refresh()
+        } catch (err) {
+          console.error('[dashboard] refresh wrong tags', err)
+        }
       })}
       disabled={pending}
       title="Re-pull the wrong-tag counts from CallRail"
